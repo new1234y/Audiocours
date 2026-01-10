@@ -353,6 +353,62 @@ h1 {
   height: 100%;
 }
 
+/* Added weekend recordings styles */
+.weekend-recordings {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  overflow-y: auto;
+}
+
+.recording-card {
+  background: linear-gradient(135deg, #f6ad55 0%, #ed8936 100%);
+  color: white;
+  padding: 4px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.55rem;
+}
+
+.recording-card:hover {
+  transform: scale(1.02);
+  box-shadow: 0 4px 12px rgba(237, 137, 54, 0.4);
+}
+
+.rec-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2px;
+}
+
+.rec-time {
+  font-size: 0.5rem;
+  opacity: 0.9;
+}
+
+.recording-card .rec-name {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.55rem;
+}
+
+.weekend-empty {
+  background: #fff5eb;
+  color: var(--text-light);
+}
+
+.weekend-others {
+  background: #f0f9ff;
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 500;
+}
+
 /* Modal */
 .modal {
   position: fixed;

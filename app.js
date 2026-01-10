@@ -56,6 +56,31 @@ function findSlotIndex(debut) {
   return -1
 }
 
+function findSlotIndexByTime(timeStr) {
+  const minutes = timeToMinutes(timeStr)
+  for (let i = FIXED_TIME_SLOTS.length - 1; i >= 0; i--) {
+    const slotStart = timeToMinutes(FIXED_TIME_SLOTS[i].start)
+    const slotEnd = timeToMinutes(FIXED_TIME_SLOTS[i].end)
+    if (minutes >= slotStart && minutes < slotEnd) {
+      return i
+    }
+  }
+  // Si avant le premier créneau
+  if (minutes < timeToMinutes(FIXED_TIME_SLOTS[0].start)) {
+    return 0
+  }
+  // Si après le dernier créneau
+  return FIXED_TIME_SLOTS.length - 1
+}
+
+function getTimeFromIsoDate(isoDateStr) {
+  const d = new Date(isoDateStr)
+  if (isNaN(d)) return null
+  const h = d.getHours().toString().padStart(2, "0")
+  const m = d.getMinutes().toString().padStart(2, "0")
+  return `${h}:${m}`
+}
+
 function getSlotSpan(lesson) {
   const startIdx = findSlotIndex(lesson.debut)
   if (startIdx === -1) return 1
@@ -136,9 +161,34 @@ function renderTimetable(timetable, weekKey) {
     dayCol.appendChild(dayHeader)
 
     const dayLessons = week[day] || []
+    const isWeekend = dayIdx === 5 || dayIdx === 6
 
     const slotsContainer = document.createElement("div")
     slotsContainer.className = "slots-container"
+
+    const dayDate = new Date(monday)
+    dayDate.setDate(monday.getDate() + dayIdx)
+
+    const registry = window._registry || []
+    const dayRecordings = registry.filter((e) => {
+      const eDate = new Date(e.created_at || e.updated_at || e.date || 0)
+      if (!eDate.getFullYear()) return false
+      return eDate.getDate() === dayDate.getDate() && eDate.getMonth() === dayDate.getMonth()
+    })
+
+    const recordingsBySlot = {}
+    if (isWeekend) {
+      dayRecordings.forEach((rec) => {
+        const time = getTimeFromIsoDate(rec.created_at || rec.updated_at || rec.date)
+        if (time) {
+          const slotIdx = findSlotIndexByTime(time)
+          if (!recordingsBySlot[slotIdx]) {
+            recordingsBySlot[slotIdx] = []
+          }
+          recordingsBySlot[slotIdx].push(rec)
+        }
+      })
+    }
 
     const occupiedSlots = new Set()
 
@@ -152,44 +202,76 @@ function renderTimetable(timetable, weekKey) {
         return
       }
 
-      const lesson = dayLessons.find((l) => findSlotIndex(l.debut) === slotIdx)
+      if (isWeekend) {
+        const slotRecordings = recordingsBySlot[slotIdx] || []
 
-      if (lesson) {
-        const span = getSlotSpan(lesson)
+        if (slotRecordings.length > 0) {
+          const recordingsWrapper = document.createElement("div")
+          recordingsWrapper.className = "weekend-recordings"
 
-        for (let i = 1; i < span; i++) {
-          occupiedSlots.add(slotIdx + i)
+          slotRecordings.forEach((rec) => {
+            const recCard = document.createElement("div")
+            recCard.className = "recording-card"
+            const recTime = getTimeFromIsoDate(rec.created_at || rec.updated_at || rec.date)
+            recCard.innerHTML = `
+              <div class="rec-header">
+                <span class="rec-icon">🎙</span>
+                <span class="rec-time">${recTime || ""}</span>
+              </div>
+              <div class="rec-name">${rec.audio_source || rec.id || "Enregistrement"}</div>
+            `
+            recCard.addEventListener("click", () => openPanelForEntry(rec))
+            recordingsWrapper.appendChild(recCard)
+          })
+
+          timeCell.appendChild(recordingsWrapper)
+        } else {
+          const emptyDiv = document.createElement("div")
+          emptyDiv.className = "empty-cell weekend-empty"
+          emptyDiv.textContent = "—"
+          timeCell.appendChild(emptyDiv)
         }
-
-        const card = document.createElement("div")
-        card.className = "course-card"
-
-        if (span > 1) {
-          card.style.flex = span
-          card.classList.add("multi-slot")
-          timeCell.style.flex = span
-        }
-
-        if (span >= 2) {
-          card.style.background = "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)"
-        }
-
-        card.innerHTML = `
-          <div class="course-title">${lesson.cours}</div>
-          <div class="course-meta">
-            <span class="teacher">${lesson.prof}</span>
-            <span class="room">${lesson.salle}</span>
-          </div>
-          <div class="course-time">${lesson.debut} - ${lesson.fin}</div>
-        `
-        card.dataset.info = JSON.stringify(lesson)
-        card.addEventListener("click", () => openSlotFromTimetable(lesson))
-        timeCell.appendChild(card)
       } else {
-        const emptyDiv = document.createElement("div")
-        emptyDiv.className = "empty-cell"
-        emptyDiv.textContent = "—"
-        timeCell.appendChild(emptyDiv)
+        // Logique normale pour les jours de semaine
+        const lesson = dayLessons.find((l) => findSlotIndex(l.debut) === slotIdx)
+
+        if (lesson) {
+          const span = getSlotSpan(lesson)
+
+          for (let i = 1; i < span; i++) {
+            occupiedSlots.add(slotIdx + i)
+          }
+
+          const card = document.createElement("div")
+          card.className = "course-card"
+
+          if (span > 1) {
+            card.style.flex = span
+            card.classList.add("multi-slot")
+            timeCell.style.flex = span
+          }
+
+          if (span >= 2) {
+            card.style.background = "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)"
+          }
+
+          card.innerHTML = `
+            <div class="course-title">${lesson.cours}</div>
+            <div class="course-meta">
+              <span class="teacher">${lesson.prof}</span>
+              <span class="room">${lesson.salle}</span>
+            </div>
+            <div class="course-time">${lesson.debut} - ${lesson.fin}</div>
+          `
+          card.dataset.info = JSON.stringify(lesson)
+          card.addEventListener("click", () => openSlotFromTimetable(lesson))
+          timeCell.appendChild(card)
+        } else {
+          const emptyDiv = document.createElement("div")
+          emptyDiv.className = "empty-cell"
+          emptyDiv.textContent = "—"
+          timeCell.appendChild(emptyDiv)
+        }
       }
 
       slotsContainer.appendChild(timeCell)
@@ -200,38 +282,37 @@ function renderTimetable(timetable, weekKey) {
     const othersContainer = document.createElement("div")
     othersContainer.className = "others-container"
 
-    const dayDate = new Date(monday)
-    dayDate.setDate(monday.getDate() + dayIdx)
-
-    const registry = window._registry || []
-    const dayRecordings = registry.filter((e) => {
-      const eDate = new Date(e.created_at || e.updated_at || e.date || 0)
-      if (!eDate.getFullYear()) return false
-      if (eDate.getDate() !== dayDate.getDate()) return false
-      if (eDate.getMonth() !== dayDate.getMonth()) return false
-
-      const matchesCourse = dayLessons.some((ls) =>
-        (e.transcription_text || e.resume_text || "").toLowerCase().includes(ls.cours.toLowerCase()),
-      )
-
-      return !matchesCourse
-    })
-
-    if (dayRecordings.length > 0) {
-      dayRecordings.forEach((rec) => {
-        const item = document.createElement("div")
-        item.className = "recording-item"
-        item.innerHTML = `
-          <span class="rec-icon">🎙</span>
-          <span class="rec-name">${rec.audio_source || rec.id || "Enreg."}</span>
-        `
-        item.addEventListener("click", () => openPanelForEntry(rec))
-        othersContainer.appendChild(item)
+    if (!isWeekend) {
+      // Pour les jours de semaine, afficher les enregistrements hors-cours
+      const unmatchedRecordings = dayRecordings.filter((e) => {
+        const matchesCourse = dayLessons.some((ls) =>
+          (e.transcription_text || e.resume_text || "").toLowerCase().includes(ls.cours.toLowerCase()),
+        )
+        return !matchesCourse
       })
+
+      if (unmatchedRecordings.length > 0) {
+        unmatchedRecordings.forEach((rec) => {
+          const item = document.createElement("div")
+          item.className = "recording-item"
+          item.innerHTML = `
+            <span class="rec-icon">🎙</span>
+            <span class="rec-name">${rec.audio_source || rec.id || "Enreg."}</span>
+          `
+          item.addEventListener("click", () => openPanelForEntry(rec))
+          othersContainer.appendChild(item)
+        })
+      } else {
+        const empty = document.createElement("div")
+        empty.className = "empty-others"
+        empty.textContent = "—"
+        othersContainer.appendChild(empty)
+      }
     } else {
+      // Pour le weekend, section vide ou message
       const empty = document.createElement("div")
-      empty.className = "empty-others"
-      empty.textContent = "—"
+      empty.className = "empty-others weekend-others"
+      empty.textContent = "Weekend"
       othersContainer.appendChild(empty)
     }
 
