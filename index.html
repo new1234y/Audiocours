@@ -10,18 +10,32 @@
 <body>
   <main class="container">
     <h1>Audiocours — Emploi du temps</h1>
-
-    <section id="recordings">
-      <h2>Enregistrements (depuis registry.json)</h2>
+    <section id="controls">
+      <div class="weeks">
+        <button id="prevWeek">◀</button>
+        <div id="weekLabel">Semaine</div>
+        <button id="nextWeek">▶</button>
+      </div>
       <div id="loading">Chargement...</div>
-      <ul id="recordingList"></ul>
     </section>
 
     <section id="timetable">
       <h2>Emploi du temps</h2>
-      <div id="weekInfo"></div>
-      <div id="tableWrap"></div>
+      <div id="gridWrap">
+        <div id="daysHeader" class="grid-row"></div>
+        <div id="grid" class="grid"></div>
+      </div>
     </section>
+
+    <section id="recordings">
+      <h2>Enregistrements (depuis registry.json)</h2>
+      <ul id="recordingList"></ul>
+    </section>
+
+    <aside id="panel" class="panel hidden">
+      <button id="closePanel">Fermer</button>
+      <div id="panelContent"></div>
+    </aside>
   </main>
 
   <script src="app.js"></script>
