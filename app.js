@@ -4,6 +4,12 @@ async function fetchJson(url){
   return res.json();
 }
 
+function getEl(id){
+  const e = document.getElementById(id);
+  if(!e) console.warn(`DOM element #${id} not found`);
+  return e;
+}
+
 function isoWeekNumber(dt){
   // returns ISO week number for a Date
   const date = new Date(Date.UTC(dt.getFullYear(), dt.getMonth(), dt.getDate()));
@@ -23,10 +29,10 @@ function weekKeyFromDate(isoDateStr){
 }
 
 function renderTimetable(timetable, weekKey){
-  const grid = document.getElementById('grid');
-  const daysHeader = document.getElementById('daysHeader');
-  grid.innerHTML = '';
-  daysHeader.innerHTML = '';
+  const grid = getEl('grid');
+  const daysHeader = getEl('daysHeader');
+  if(grid) grid.innerHTML = '';
+  if(daysHeader) daysHeader.innerHTML = '';
   const days = ['lundi','mardi','mercredi','jeudi','vendredi'];
   days.forEach(d => { const h = document.createElement('h4'); h.textContent = d[0].toUpperCase()+d.slice(1); daysHeader.appendChild(h) });
   const week = timetable[weekKey] || {};
@@ -45,10 +51,10 @@ function renderTimetable(timetable, weekKey){
 }
 
 function renderRecordings(registry){
-  const list = document.getElementById('recordingList');
-  const loading = document.getElementById('loading');
-  loading.style.display = 'none';
-  list.innerHTML = '';
+  const list = getEl('recordingList');
+  const loading = getEl('loading');
+  if(loading) loading.style.display = 'none';
+  if(list) list.innerHTML = '';
   // registry expected to be array of entries with created_at
   // build map of weekKey -> list of entries
   const weeksMap = new Map();
@@ -62,6 +68,7 @@ function renderRecordings(registry){
   window._weeksMap = weeksMap;
   // render simple list
   registry.slice().reverse().forEach(entry => {
+    if(!list) return;
     const li = document.createElement('li');
     const title = document.createElement('div'); title.textContent = entry.audio_source || entry.id || '—';
     const meta = document.createElement('div'); meta.className='meta';
@@ -74,7 +81,7 @@ function renderRecordings(registry){
 
 function selectEntry(entry){
   const wk = weekKeyFromDate(entry.created_at || entry.updated_at || entry.date || '');
-  document.getElementById('weekLabel').textContent = wk || 'inconnue';
+  const weekLabel = getEl('weekLabel'); if(weekLabel) weekLabel.textContent = wk || 'inconnue';
   // load timetable and render
   fetchJson('timetable.json').then(t=> renderTimetable(t, wk || 'semaine_A'))
     .catch(e=>{ document.getElementById('grid').textContent = 'Erreur chargement emploi du temps' })
@@ -83,10 +90,11 @@ function selectEntry(entry){
 }
 
 function openPanelForEntry(entry){
-  const panel = document.getElementById('panel');
-  const content = document.getElementById('panelContent');
-  panel.classList.remove('hidden');
+  const panel = getEl('panel');
+  const content = getEl('panelContent');
+  if(panel) panel.classList.remove('hidden');
   // build content
+  if(!content) return;
   content.innerHTML = '';
   const h = document.createElement('h3'); h.textContent = entry.audio_source || entry.id;
   const date = document.createElement('div'); date.className='meta'; date.textContent = entry.created_at || '';
@@ -118,18 +126,18 @@ function openPanelForEntry(entry){
   })
 }
 
-document.getElementById('closePanel').addEventListener('click', ()=>{ document.getElementById('panel').classList.add('hidden') })
+const closeBtn = getEl('closePanel'); if(closeBtn) closeBtn.addEventListener('click', ()=>{ const p = getEl('panel'); if(p) p.classList.add('hidden') })
 
 // week navigation: allow moving back/forward through weeks until bounds determined by registry dates
 function setupWeekNavigation(){
-  const prev = document.getElementById('prevWeek');
-  const next = document.getElementById('nextWeek');
-  prev.addEventListener('click', ()=> changeWeek(-1));
-  next.addEventListener('click', ()=> changeWeek(1));
+  const prev = getEl('prevWeek');
+  const next = getEl('nextWeek');
+  if(prev) prev.addEventListener('click', ()=> changeWeek(-1));
+  if(next) next.addEventListener('click', ()=> changeWeek(1));
 }
 
 function changeWeek(delta){
-  const label = document.getElementById('weekLabel');
+  const label = getEl('weekLabel');
   // label currently 'semaine_A' or 'semaine_B' or ISO week number? we store as 'semaine_A'/'semaine_B'
   const cur = label.textContent || 'semaine_A';
   // to move week-by-week we need a reference ISO week number; we'll store currentIsoWeek on window
@@ -142,7 +150,7 @@ function changeWeek(delta){
   base.setDate(base.getDate() + 7*delta);
   window.currentIsoWeek = base.toISOString().slice(0,10);
   const wkKey = weekKeyFromDate(window.currentIsoWeek);
-  document.getElementById('weekLabel').textContent = wkKey || 'semaine_A';
+  const wl = getEl('weekLabel'); if(wl) wl.textContent = wkKey || 'semaine_A';
   fetchJson('timetable.json').then(t=> renderTimetable(t, wkKey||'semaine_A'))
 }
 
@@ -155,7 +163,7 @@ async function main(){
     if(registry.length>0){
       const latest = registry[registry.length-1];
       const wk = weekKeyFromDate(latest.created_at || latest.updated_at || latest.date || '');
-      document.getElementById('weekLabel').textContent = wk || 'semaine_A';
+      const wl = getEl('weekLabel'); if(wl) wl.textContent = wk || 'semaine_A';
       window.currentIsoWeek = (latest.created_at||new Date().toISOString()).slice(0,10);
       fetchJson('timetable.json').then(t=> renderTimetable(t, wk||'semaine_A'))
     }else{
