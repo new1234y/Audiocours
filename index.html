@@ -5,33 +5,42 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Audiocours — Emploi du temps</title>
   <link rel="stylesheet" href="style.css">
-  <meta name="description" content="Affichage de l'emploi du temps selon la date d'un enregistrement dans registry.json" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <meta name="description" content="Affichage de l'emploi du temps avec enregistrements audio alignés par horaire" />
 </head>
 <body>
   <main class="container">
-    <h1>Audiocours — Emploi du temps</h1>
-    <section id="controls">
-      <div class="weeks">
-        <button id="prevWeek">◀</button>
-        <div id="weekLabel">Semaine</div>
-        <button id="nextWeek">▶</button>
+    <header class="header">
+      <h1>📚 Audiocours</h1>
+      <p class="subtitle">Emploi du temps avec enregistrements</p>
+    </header>
+    
+    <section id="controls" class="controls">
+      <div class="week-nav">
+        <button id="prevWeek" class="btn btn-nav">◀</button>
+        <div id="weekLabel" class="week-label">Semaine</div>
+        <button id="nextWeek" class="btn btn-nav">▶</button>
       </div>
-      <div id="loading">Chargement...</div>
+      <div id="loading" class="loading hidden">Chargement...</div>
     </section>
 
-    <section id="timetable">
-      <h2>Emploi du temps</h2>
-      <div id="gridWrap">
-        <div id="daysHeader" class="grid-row"></div>
+    <!-- Mobile day selector for navigation -->
+    <div id="daySelector" class="day-selector hidden"></div>
+
+    <section id="timetable" class="timetable">
+      <div id="gridWrap" class="grid-wrapper">
+        <div id="timesColumn" class="times-column"></div>
         <div id="grid" class="grid"></div>
       </div>
     </section>
 
-    <!-- recordings are shown per-day inside the timetable; modal is used for details -->
-
+    <!-- Modal for recording details -->
     <div id="modal" class="modal hidden">
+      <div class="modal-backdrop"></div>
       <div class="modal-content">
-        <button id="closeModal" class="btn-small">Fermer</button>
+        <button id="closeModal" class="btn-close">✕</button>
         <div id="modalBody"></div>
       </div>
     </div>
