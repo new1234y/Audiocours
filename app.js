@@ -34,27 +34,71 @@ function renderTimetable(timetable, weekKey){
   if(grid) grid.innerHTML = '';
   if(daysHeader) daysHeader.innerHTML = '';
   const days = ['lundi','mardi','mercredi','jeudi','vendredi'];
-  days.forEach(d => { const h = document.createElement('h4'); h.textContent = d[0].toUpperCase()+d.slice(1); daysHeader.appendChild(h) });
+  // compute Monday date for the reference weekKey using currentIsoWeek if set
+  let refDate = new Date();
+  if(window.currentIsoWeek) refDate = new Date(window.currentIsoWeek);
+  // find monday of that week
+  const dayOfWeek = refDate.getDay();
+  const monday = new Date(refDate);
+  monday.setDate(refDate.getDate() - ((dayOfWeek + 6) % 7));
+
+  // add headers with date
+  days.forEach((d, idx) => {
+    const date = new Date(monday);
+    date.setDate(monday.getDate() + idx);
+    const h = document.createElement('h4');
+    h.textContent = `${d[0].toUpperCase()+d.slice(1)} ${date.getDate()} ${date.toLocaleString('fr-FR',{month:'long'})}`;
+    if(daysHeader) daysHeader.appendChild(h);
+  });
+
   const week = timetable[weekKey] || {};
-  days.forEach(day => {
-    const cell = document.createElement('div'); cell.className='grid-cell';
-    const lessons = week[day] || [];
-    if(lessons.length===0){ const p = document.createElement('div'); p.className='small'; p.textContent='—'; cell.appendChild(p) }
-    lessons.forEach(ls => {
-      const slot = document.createElement('div'); slot.className='slot';
-      slot.innerHTML = `<div class="time">${ls.debut} — ${ls.fin}</div><div class="small">${ls.cours}</div>`;
-      slot.dataset.info = JSON.stringify(ls);
-      cell.appendChild(slot);
-    })
-    grid.appendChild(cell);
-  })
+  // collect all unique time slots across the week and sort
+  const timeSet = new Set();
+  days.forEach(day => (week[day]||[]).forEach(ls => timeSet.add(ls.debut + '|' + ls.fin)));
+  const times = Array.from(timeSet).sort((a,b)=>{ const [a1,a2]=a.split('|'); const [b1,b2]=b.split('|'); return a1.localeCompare(b1) || a2.localeCompare(b2) });
+
+  // create grid columns for each day, rows for times
+  if(grid) grid.style.gridTemplateRows = `repeat(${times.length || 1}, auto)`;
+  // build cells per day but arranged by time
+  for(const day of days){
+    const dayLessons = week[day] || [];
+    const mapByTime = new Map(dayLessons.map(ls=>[ls.debut+'|'+ls.fin, ls]));
+    for(const t of (times.length?times:[''])){
+      const cell = document.createElement('div'); cell.className='grid-cell';
+      if(t === ''){ cell.innerHTML = '<div class="small">—</div>'; }
+      else if(mapByTime.has(t)){
+        const ls = mapByTime.get(t);
+        const slot = document.createElement('div'); slot.className='slot';
+        slot.innerHTML = `<div class="time">${ls.debut}</div><div class="title">${ls.cours} — ${ls.prof} — ${ls.salle}</div>`;
+        slot.dataset.info = JSON.stringify(ls);
+        slot.addEventListener('click', ()=> openSlotFromTimetable(ls));
+        cell.appendChild(slot);
+      } else {
+        cell.innerHTML = '<div class="small">&nbsp;</div>';
+      }
+      if(grid) grid.appendChild(cell);
+    }
+  }
+}
+
+function openSlotFromTimetable(ls){
+  // find matching entries in registry by course name or date
+  const registry = window._registry || [];
+  const match = registry.find(e => (e.resume_text||e.transcription_text||'').includes(ls.cours) || (e.audio_source||'').includes(ls.cours));
+  if(match) openPanelForEntry(match);
+  else {
+    // open panel with basic info
+    openPanelForEntry({audio_source: ls.cours, created_at: new Date().toISOString(), transcription_text: '', resume_text: ''});
+  }
 }
 
 function renderRecordings(registry){
   const list = getEl('recordingList');
+  const othersList = getEl('othersList');
   const loading = getEl('loading');
   if(loading) loading.style.display = 'none';
   if(list) list.innerHTML = '';
+  if(othersList) othersList.innerHTML = '';
   // registry expected to be array of entries with created_at
   // build map of weekKey -> list of entries
   const weeksMap = new Map();
@@ -66,16 +110,21 @@ function renderRecordings(registry){
   // store for navigation
   window._registry = registry;
   window._weeksMap = weeksMap;
-  // render simple list
+  // display recordings: if their text contains a course name from timetable, show in list, otherwise in others
+  const timetable = window._timetable || {};
+  const allCourseNames = new Set();
+  Object.values(timetable).forEach(week => Object.values(week).forEach(day => day.forEach(ls => allCourseNames.add(ls.cours))));
+
   registry.slice().reverse().forEach(entry => {
-    if(!list) return;
+    const text = (entry.resume_text||entry.transcription_text||'').toLowerCase();
+    const matched = [...allCourseNames].some(c => text.includes(c.toLowerCase()));
     const li = document.createElement('li');
     const title = document.createElement('div'); title.textContent = entry.audio_source || entry.id || '—';
     const meta = document.createElement('div'); meta.className='meta';
     meta.textContent = entry.created_at || '';
     li.appendChild(title); li.appendChild(meta);
-    list.appendChild(li);
     li.addEventListener('click', ()=> selectEntry(entry));
+    if(matched){ if(list) list.appendChild(li) } else { if(othersList) othersList.appendChild(li) }
   })
 }
 
@@ -107,6 +156,14 @@ function openPanelForEntry(entry){
   const searchBox = document.createElement('div'); searchBox.className='searchBox';
   const inp = document.createElement('input'); inp.placeholder='Rechercher dans la transcription...';
   const btn = document.createElement('button'); btn.textContent='Rechercher'; btn.style.background='#444';
+  // add copy/export and audio controls
+  const controls = document.createElement('div'); controls.className='controls-row';
+  const copyBtn = document.createElement('button'); copyBtn.className='btn-small copyBtn'; copyBtn.textContent='Copier résumé';
+  const exportBtn = document.createElement('button'); exportBtn.className='btn-small exportBtn'; exportBtn.textContent='Exporter transcription';
+  const playBtn = document.createElement('button'); playBtn.className='btn-small'; playBtn.textContent='▶ Écouter résumé';
+  controls.appendChild(playBtn); controls.appendChild(copyBtn); controls.appendChild(exportBtn);
+  content.appendChild(controls);
+
   searchBox.appendChild(inp); searchBox.appendChild(btn);
   full.appendChild(searchBox);
   const pre = document.createElement('pre'); pre.style.whiteSpace='pre-wrap'; pre.textContent = entry.transcription_text || entry.resume_text || '';
@@ -123,6 +180,23 @@ function openPanelForEntry(entry){
       const highlighted = txt.replace(re, m=>`<<${m}>>`);
       pre.innerHTML = highlighted.replace(/<<(.+?)>>/g, '<mark>$1</mark>');
     }
+  })
+  // copy/export/play handlers
+  copyBtn.addEventListener('click', ()=>{ const txt = (entry.resume_text||entry.transcription_text||''); navigator.clipboard.writeText(txt); alert('Copié dans le presse-papier'); })
+  exportBtn.addEventListener('click', ()=>{
+    const blob = new Blob([entry.transcription_text||entry.resume_text||''], {type:'text/plain;charset=utf-8'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = `${(entry.audio_source||entry.id||'transcription')}.txt`; a.click(); URL.revokeObjectURL(url);
+  })
+  playBtn.addEventListener('click', ()=>{
+    const text = entry.resume_text || entry.transcription_text || '';
+    if(!text) return alert('Aucun texte à lire');
+    if('speechSynthesis' in window){
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = 'fr-FR';
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(u);
+    } else alert('Synthèse vocale non supportée');
   })
 }
 
