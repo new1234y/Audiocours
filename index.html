@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Audiocours — Emploi du temps</title>
+  <link rel="stylesheet" href="style.css">
+  <meta name="description" content="Affichage de l'emploi du temps selon la date d'un enregistrement dans registry.json" />
+</head>
+<body>
+  <main class="container">
+    <h1>Audiocours — Emploi du temps</h1>
+
+    <section id="recordings">
+      <h2>Enregistrements (depuis registry.json)</h2>
+      <div id="loading">Chargement...</div>
+      <ul id="recordingList"></ul>
+    </section>
+
+    <section id="timetable">
+      <h2>Emploi du temps</h2>
+      <div id="weekInfo"></div>
+      <div id="tableWrap"></div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
