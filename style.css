@@ -28,6 +28,7 @@ body {
   line-height: 1.4;
   background: var(--bg);
   color: var(--text);
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 .container {
@@ -36,6 +37,7 @@ body {
   display: flex;
   flex-direction: column;
   padding: 8px 12px;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom));
   overflow: hidden;
 }
 
@@ -439,6 +441,7 @@ h1 {
 .modal-content {
   background: white;
   padding: 20px;
+  padding-bottom: calc(20px + env(safe-area-inset-bottom));
   border-radius: 12px;
   max-width: 700px;
   width: 95%;
