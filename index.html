@@ -27,15 +27,14 @@
       </div>
     </section>
 
-    <section id="recordings">
-      <h2>Autres enregistrements (hors emploi du temps)</h2>
-      <ul id="othersList"></ul>
-    </section>
+    <!-- recordings are shown per-day inside the timetable; modal is used for details -->
 
-    <aside id="panel" class="panel hidden">
-      <button id="closePanel">Fermer</button>
-      <div id="panelContent"></div>
-    </aside>
+    <div id="modal" class="modal hidden">
+      <div class="modal-content">
+        <button id="closeModal" class="btn-small">Fermer</button>
+        <div id="modalBody"></div>
+      </div>
+    </div>
   </main>
 
   <script src="app.js"></script>

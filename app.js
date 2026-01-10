@@ -33,7 +33,7 @@ function renderTimetable(timetable, weekKey){
   const daysHeader = getEl('daysHeader');
   if(grid) grid.innerHTML = '';
   if(daysHeader) daysHeader.innerHTML = '';
-  const days = ['lundi','mardi','mercredi','jeudi','vendredi'];
+  const days = ['lundi','mardi','mercredi','jeudi','vendredi','samedi','dimanche'];
   // compute Monday date for the reference weekKey using currentIsoWeek if set
   let refDate = new Date();
   if(window.currentIsoWeek) refDate = new Date(window.currentIsoWeek);
@@ -60,10 +60,16 @@ function renderTimetable(timetable, weekKey){
   // create grid columns for each day, rows for times
   if(grid) grid.style.gridTemplateRows = `repeat(${times.length || 1}, auto)`;
   // build cells per day but arranged by time
+  // add a vacation row at top if any vacation info in timetable (optional)
+  if(timetable.vacances){
+    const vacRow = document.createElement('div'); vacRow.className='vacation'; vacRow.textContent = timetable.vacances;
+    if(grid) grid.appendChild(vacRow);
+  }
+
   for(const day of days){
     const dayLessons = week[day] || [];
     const mapByTime = new Map(dayLessons.map(ls=>[ls.debut+'|'+ls.fin, ls]));
-    for(const t of (times.length?times:[''])){
+  for(const t of (times.length?times:[''])){
       const cell = document.createElement('div'); cell.className='grid-cell';
       if(t === ''){ cell.innerHTML = '<div class="small">—</div>'; }
       else if(mapByTime.has(t)){
@@ -78,6 +84,21 @@ function renderTimetable(timetable, weekKey){
       }
       if(grid) grid.appendChild(cell);
     }
+  }
+
+  // For each day, append an 'Autres' cell listing recordings that don't match any slot
+  const registry = window._registry || [];
+  for(const day of days){
+    const otherCell = document.createElement('div'); otherCell.className='grid-cell';
+    const dayDate = new Date(monday); dayDate.setDate(monday.getDate() + days.indexOf(day));
+    const others = registry.filter(e=>{
+      const eDate = new Date(e.created_at||e.updated_at||e.date||0);
+      return eDate.getFullYear() && eDate.getDate()===dayDate.getDate() && eDate.getMonth()===dayDate.getMonth() && !( (week[day]||[]).some(ls => (e.transcription_text||e.resume_text||'').includes(ls.cours)) );
+    });
+    if(others.length>0){
+      others.forEach(o=>{ const d = document.createElement('div'); d.className='small'; d.textContent = o.audio_source || o.id; d.addEventListener('click', ()=> openPanelForEntry(o)); otherCell.appendChild(d) })
+    } else { otherCell.innerHTML = '<div class="small">&nbsp;</div>' }
+    if(grid) grid.appendChild(otherCell);
   }
 }
 
@@ -139,9 +160,9 @@ function selectEntry(entry){
 }
 
 function openPanelForEntry(entry){
-  const panel = getEl('panel');
-  const content = getEl('panelContent');
-  if(panel) panel.classList.remove('hidden');
+  const modal = getEl('modal');
+  const content = getEl('modalBody');
+  if(modal) modal.classList.remove('hidden');
   // build content
   if(!content) return;
   content.innerHTML = '';
@@ -200,7 +221,7 @@ function openPanelForEntry(entry){
   })
 }
 
-const closeBtn = getEl('closePanel'); if(closeBtn) closeBtn.addEventListener('click', ()=>{ const p = getEl('panel'); if(p) p.classList.add('hidden') })
+const closeBtn = getEl('closeModal'); if(closeBtn) closeBtn.addEventListener('click', ()=>{ const p = getEl('modal'); if(p) p.classList.add('hidden') })
 
 // week navigation: allow moving back/forward through weeks until bounds determined by registry dates
 function setupWeekNavigation(){
