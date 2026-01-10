@@ -1,30 +1,24 @@
 [
   {
     "id": "2026 20 10",
-    "audio_source": "2026 20 10.m4a",
+    "audio_source": "Première évaluation test",
     "transcription_text": " La première fois, on va tester. C'est très bien marché. Et c'était en plus la puissité gratuit pour vrai. C'est un truc qui se débloque de plus en plus.",
-    "resume_text": "Voici un résumé clair et concis du texte :\n\n\"Une approche a été testée avec succès et était accessible gratuitement. Cette tendance est en augmentation.\" \n\nEn bref, le texte parle d'une solution qui a fonctionné et qui est de plus en plus offerte gratuitement.\n",
-    "created_at": "2026-01-10T20:14:12.871976Z"
-  },
-  {
-    "id": "2026-01-10 20.20",
-    "audio_source": "2026-01-10 20.20.m4a",
-    "transcription_text": "",
-    "resume_text": "Veuillez me fournir le texte que vous souhaitez que je résume. Je suis prêt à le faire dès que vous me l'aurez donné. 😊\n",
-    "created_at": "2026-01-10T20:14:17.117108Z"
-  },
-  {
-    "id": "2026-01-10 21.02",
-    "audio_source": "2026-01-10 21.02.m4a",
-    "transcription_text": " Tout s'est informé à 16e, j'occupe de tout ça pour ce format 21 de bième et ensuite 24 pouces format 24 de bième. Bref, un format, je suis super fête, j'ai joué vos vidéos, et également pour le message, c'est vraiment passé. A tellement, c'est un montage, c'est pas très bien, à la fin de ma question. Mais c'est portement passé, je connais ce genre de la baie, à la banque, dans le futur. Là, maintenant, on s'attaque à l'espace, ça me sonne, c'est ce qu'ils ont pris, ils ont pris de plus. Là, déjà, dans sa première temps, une télé-génantes d'as-tu, 130 ou 180, avec en 9 technologie micro-actéristique. En rouge, à le pixel, utilise des lènes de rouge, vers tes bleus, indépendants. Ceux petites qu'un cheveux humain, ils ont posé couleurs plus réalistes. 100% de l'espace colossimétique, pété 2000. En concrètement, c'est la palette de couleurs qui est utilisé, aussi les mains, et aussi pour les contenus de sujets. Et c'est super impressionnant. Je me pose juste la question, c'est ce qui est bon ça de l'opin, puisque le son 15 coups, c'est à partir de 30 kilos. Là, on est facile de passer ensemble du coup. Et pour le budget, ils sont tout à base. Alors, je suis moins cu, il n'y a pas mal de personnes de nouveau qui ont la pleine de passées, le remassage. Parce que, voilà, pendant mes derniers millions d'embroucheurs, il y a des systèmes de décroisseurs qui existent notamment des amoirs. Les problèmes, c'est que ça fonctionne pas si bien que ça. En ce cas, quand tu regardes des différents avis, je me suis en effet renseigné pour la maison. Mais à conception, la planète est son bon air-dresser. Donc, il y a plus ça va frontement délaissé. Alors, déjà, au niveau de la passe, c'est comment y avoir ? Pour savoir, c'est juste parfait. Là, tu le mets dans un viscure, par exemple, un peu de tétrante avec plus bas de différents villages, non conduits. Et sur tout pour te se lourde, pas.",
-    "resume_text": "Voici un résumé concis du texte :\n\nL'orateur gère des projets audiovisuels pour différents formats d'écrans, dont des écrans QLED avec une palette de couleurs étendue (100% de l'espace colorimétrique) et des pixels de taille comparable à un cheveu humain, permettant des images très réalistes. \n\nIl exprime cependant une inquiétude concernant le coût élevé (30 kilos) de ces technologies, surtout face aux contraintes budgétaires et à la difficulté d'installer des systèmes de rétro-éclairage efficaces, en particulier pour les maisons isolées. Il souligne l'importance de bien se renseigner avant d'investir, en comparant les prix et les avis sur le marché.\n",
-    "created_at": "2026-01-10T20:14:33.224042Z"
-  },
-  {
-    "id": "2026-01-10 22.06",
-    "audio_source": "2026-01-10 22.06.m4a",
-    "transcription_text": " Ok, ceci est un test. Normalement, ce là va afficher mon orangistrement sur le site et on va tester ça en faisant un orangistrement. Normalement, ça capte toutes les 10 minutes si il y a un nouvel orangistrement. Alors, ensuite, tu vas faire un résumé de ça. Ok, normalement, ça va faire un résumé et après avoir fait un résumé, ça va m'afficher toute la transcription au duo et ça va rafficher sur le site. Et est-ce que même quand je parle pas dans le bon sens, si je parle loin, est-ce que ça m'a dit que si je fais des bruits par azie, c'est à plusieurs personnes qui me base, est-ce que ça va entend bien que même et on garde ça en fonctionne ?",
-    "resume_text": "Ce texte décrit un test d'un système de transcription et d'orangistrement (probablement lié à la reconnaissance vocale). Le système est censé :\n\n*   **Capturer des informations toutes les 10 minutes.**\n*   **Générer un résumé de la transcription.**\n*   **Afficher la transcription complète sur le site web et dans le Duo.**\n*   **Fonctionner correctement même avec des bruits ou des problèmes de parole.**\n\nEn bref, il s'agit de tester la capacité d'un outil à transcrire et à fournir des résumés de conversations.",
-    "created_at": "2026-01-10T21:14:43.257235Z"
+    "resume_json": {
+      "titre": "Première évaluation test",
+      "points_cles": [
+        "Utilisation d'un test gratuit",
+        "Succès de cette approche",
+        "Développement croissant de ce type de ressources"
+      ],
+      "notions_a_apprendre": [
+        "Tests d'évaluation",
+        "Ressources gratuites"
+      ],
+      "devoirs": [
+        "Participer au test initial"
+      ],
+      "resume": "Le cours commence par une évaluation test gratuite, qui a été jugée efficace. Il s'agit d'une tendance croissante d'utilisation de ressources gratuites pour l'évaluation."
+    },
+    "created_at": "2026-01-10T23:10:52.027618Z"
   }
 ]
