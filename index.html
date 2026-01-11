@@ -2,26 +2,63 @@
 <html lang="fr">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no" />
   <title>Audiocours — Emploi du temps</title>
   <link rel="stylesheet" href="style.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <meta name="description" content="Affichage de l'emploi du temps avec enregistrements audio alignés par horaire" />
+  <meta name="theme-color" content="#667eea" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 </head>
 <body>
   <main class="container">
     <header class="header">
-      <h1>📚 Audiocours</h1>
+      <div class="header-top">
+        <h1>📚 Audiocours</h1>
+        <div class="header-actions">
+          <button id="searchToggle" class="btn-icon" title="Rechercher">🔍</button>
+          <button id="statsToggle" class="btn-icon" title="Statistiques">📊</button>
+          <button id="themeToggle" class="btn-icon" title="Thème sombre">🌙</button>
+          <button id="settingsToggle" class="btn-icon" title="Paramètres">⚙️</button>
+        </div>
+      </div>
       <p class="subtitle">Emploi du temps avec enregistrements</p>
     </header>
+
+    <!-- Search bar -->
+    <div id="searchBar" class="search-bar hidden">
+      <input type="text" id="searchInput" placeholder="Rechercher un cours, prof, enregistrement..." />
+      <button id="searchClear" class="btn-clear">✕</button>
+    </div>
+
+    <!-- Stats panel -->
+    <div id="statsPanel" class="stats-panel hidden">
+      <div class="stat-card">
+        <span class="stat-value" id="statCourses">0</span>
+        <span class="stat-label">Cours cette semaine</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="statRecordings">0</span>
+        <span class="stat-label">Enregistrements</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="statHours">0h</span>
+        <span class="stat-label">Heures de cours</span>
+      </div>
+    </div>
     
     <section id="controls" class="controls">
       <div class="week-nav">
         <button id="prevWeek" class="btn btn-nav">◀</button>
-        <div id="weekLabel" class="week-label">Semaine</div>
+        <div class="week-info">
+          <div id="weekLabel" class="week-label">Semaine</div>
+          <div id="weekDates" class="week-dates"></div>
+        </div>
         <button id="nextWeek" class="btn btn-nav">▶</button>
+        <button id="todayBtn" class="btn btn-today">Aujourd'hui</button>
       </div>
       <div id="loading" class="loading hidden">Chargement...</div>
     </section>
@@ -44,6 +81,46 @@
         <div id="modalBody"></div>
       </div>
     </div>
+
+    <!-- Settings panel -->
+    <div id="settingsModal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-content settings-content">
+        <button id="closeSettings" class="btn-close">✕</button>
+        <h3>⚙️ Paramètres</h3>
+        <div class="settings-group">
+          <label class="setting-item">
+            <span>Thème sombre</span>
+            <input type="checkbox" id="darkModeCheck" />
+          </label>
+          <label class="setting-item">
+            <span>Notifications</span>
+            <input type="checkbox" id="notifCheck" />
+          </label>
+          <label class="setting-item">
+            <span>Compacter l'affichage</span>
+            <input type="checkbox" id="compactCheck" />
+          </label>
+          <label class="setting-item">
+            <span>Vitesse de lecture</span>
+            <select id="speechRate">
+              <option value="0.75">0.75x</option>
+              <option value="1" selected>1x</option>
+              <option value="1.25">1.25x</option>
+              <option value="1.5">1.5x</option>
+              <option value="2">2x</option>
+            </select>
+          </label>
+        </div>
+        <div class="settings-actions">
+          <button id="exportAll" class="btn">📥 Exporter tout</button>
+          <button id="clearCache" class="btn btn-danger">🗑️ Vider le cache</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast notifications -->
+    <div id="toastContainer" class="toast-container"></div>
   </main>
 
   <script src="app.js"></script>

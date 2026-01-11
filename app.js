@@ -1,3 +1,4 @@
+// ============== UTILITY FUNCTIONS ==============
 async function fetchJson(url) {
   const res = await fetch(url)
   if (!res.ok) throw new Error(`${url} -> ${res.status}`)
@@ -31,7 +32,34 @@ function timeToMinutes(timeStr) {
   return h * 60 + m
 }
 
-// Ces créneaux sont les heures de début uniques triées
+function extractQuotedTitle(raw) {
+  if (!raw) return null
+  const m = raw.match(/"([^"]{3,80})"/)
+  if (m) return m[1]
+  return null
+}
+
+// Toast notification system
+function showToast(message, type = "info") {
+  const container = getEl("toastContainer")
+  if (!container) return
+
+  const toast = document.createElement("div")
+  toast.className = `toast ${type}`
+  toast.innerHTML = `
+    <span>${type === "success" ? "✓" : type === "error" ? "✕" : "ℹ"}</span>
+    <span>${message}</span>
+  `
+  container.appendChild(toast)
+
+  setTimeout(() => {
+    toast.style.opacity = "0"
+    toast.style.transform = "translateX(100%)"
+    setTimeout(() => toast.remove(), 300)
+  }, 3000)
+}
+
+// Time slot definitions
 const FIXED_TIME_SLOTS = [
   { start: "08:10", end: "09:10", label: "8h10-9h10" },
   { start: "09:10", end: "10:10", label: "9h10-10h10" },
@@ -48,7 +76,6 @@ function findSlotIndex(debut) {
   const debutMinutes = timeToMinutes(debut)
   for (let i = 0; i < FIXED_TIME_SLOTS.length; i++) {
     const slotStartMinutes = timeToMinutes(FIXED_TIME_SLOTS[i].start)
-    // Tolérance de 15 minutes pour matcher les cours
     if (Math.abs(debutMinutes - slotStartMinutes) <= 15) {
       return i
     }
@@ -65,11 +92,9 @@ function findSlotIndexByTime(timeStr) {
       return i
     }
   }
-  // Si avant le premier créneau
   if (minutes < timeToMinutes(FIXED_TIME_SLOTS[0].start)) {
     return 0
   }
-  // Si après le dernier créneau
   return FIXED_TIME_SLOTS.length - 1
 }
 
@@ -100,6 +125,37 @@ function getSlotSpan(lesson) {
   return span
 }
 
+// ============== STATS FUNCTIONS ==============
+function updateStats() {
+  const registry = window._registry || []
+  const timetable = window._timetable || {}
+  const weekKey = weekKeyFromDate(window.currentIsoWeek || new Date().toISOString())
+  const week = timetable[weekKey] || {}
+
+  let totalCourses = 0
+  let totalMinutes = 0
+
+  Object.values(week).forEach((dayLessons) => {
+    if (Array.isArray(dayLessons)) {
+      totalCourses += dayLessons.length
+      dayLessons.forEach((lesson) => {
+        const start = timeToMinutes(lesson.debut)
+        const end = timeToMinutes(lesson.fin)
+        totalMinutes += end - start
+      })
+    }
+  })
+
+  const statCourses = getEl("statCourses")
+  const statRecordings = getEl("statRecordings")
+  const statHours = getEl("statHours")
+
+  if (statCourses) statCourses.textContent = totalCourses
+  if (statRecordings) statRecordings.textContent = registry.length
+  if (statHours) statHours.textContent = `${Math.round(totalMinutes / 60)}h`
+}
+
+// ============== RENDER TIMETABLE ==============
 function renderTimetable(timetable, weekKey) {
   const gridWrap = getEl("gridWrap")
   if (!gridWrap) return
@@ -115,7 +171,17 @@ function renderTimetable(timetable, weekKey) {
   const monday = new Date(refDate)
   monday.setDate(refDate.getDate() - ((dayOfWeek + 6) % 7))
 
+  // Update week dates display
+  const weekDates = getEl("weekDates")
+  if (weekDates) {
+    const sunday = new Date(monday)
+    sunday.setDate(monday.getDate() + 6)
+    weekDates.textContent = `${monday.getDate()}/${monday.getMonth() + 1} - ${sunday.getDate()}/${sunday.getMonth() + 1}`
+  }
+
   const week = timetable[weekKey] || {}
+  const registry = window._registry || []
+  const today = new Date()
 
   const wrapper = document.createElement("div")
   wrapper.className = "grid-wrapper"
@@ -155,8 +221,10 @@ function renderTimetable(timetable, weekKey) {
     dayCol.className = "day-column"
     dayCol.dataset.dayIndex = dayIdx
 
+    const isToday = date.toDateString() === today.toDateString()
+
     const dayHeader = document.createElement("div")
-    dayHeader.className = "day-name"
+    dayHeader.className = `day-name${isToday ? " today" : ""}`
     dayHeader.innerHTML = `${dayNames[dayIdx]}<span class="date">${date.getDate()}/${date.getMonth() + 1}</span>`
     dayCol.appendChild(dayHeader)
 
@@ -169,7 +237,6 @@ function renderTimetable(timetable, weekKey) {
     const dayDate = new Date(monday)
     dayDate.setDate(monday.getDate() + dayIdx)
 
-    const registry = window._registry || []
     const dayRecordings = registry.filter((e) => {
       const eDate = new Date(e.created_at || e.updated_at || e.date || 0)
       if (!eDate.getFullYear()) return false
@@ -220,7 +287,10 @@ function renderTimetable(timetable, weekKey) {
               </div>
               <div class="rec-name">${rec.audio_source || rec.id || "Enregistrement"}</div>
             `
-            recCard.addEventListener("click", () => openPanelForEntry(rec))
+            recCard.addEventListener("click", (e) => {
+              e.stopPropagation()
+              openPanelForEntry(rec)
+            })
             recordingsWrapper.appendChild(recCard)
           })
 
@@ -232,7 +302,6 @@ function renderTimetable(timetable, weekKey) {
           timeCell.appendChild(emptyDiv)
         }
       } else {
-        // Logique normale pour les jours de semaine
         const lesson = dayLessons.find((l) => findSlotIndex(l.debut) === slotIdx)
 
         if (lesson) {
@@ -242,8 +311,13 @@ function renderTimetable(timetable, weekKey) {
             occupiedSlots.add(slotIdx + i)
           }
 
+          // Check if there's a recording for this course
+          const hasRecording = registry.some((e) =>
+            (e.resume_text || e.transcription_text || "").toLowerCase().includes(lesson.cours.toLowerCase()),
+          )
+
           const card = document.createElement("div")
-          card.className = "course-card"
+          card.className = `course-card${hasRecording ? " has-recording" : ""}`
 
           if (span > 1) {
             card.style.flex = span
@@ -264,7 +338,10 @@ function renderTimetable(timetable, weekKey) {
             <div class="course-time">${lesson.debut} - ${lesson.fin}</div>
           `
           card.dataset.info = JSON.stringify(lesson)
-          card.addEventListener("click", () => openSlotFromTimetable(lesson))
+          card.addEventListener("click", (e) => {
+            e.stopPropagation()
+            openSlotFromTimetable(lesson)
+          })
           timeCell.appendChild(card)
         } else {
           const emptyDiv = document.createElement("div")
@@ -283,7 +360,6 @@ function renderTimetable(timetable, weekKey) {
     othersContainer.className = "others-container"
 
     if (!isWeekend) {
-      // Pour les jours de semaine, afficher les enregistrements hors-cours
       const unmatchedRecordings = dayRecordings.filter((e) => {
         const matchesCourse = dayLessons.some((ls) =>
           (e.transcription_text || e.resume_text || "").toLowerCase().includes(ls.cours.toLowerCase()),
@@ -299,7 +375,10 @@ function renderTimetable(timetable, weekKey) {
             <span class="rec-icon">🎙</span>
             <span class="rec-name">${rec.audio_source || rec.id || "Enreg."}</span>
           `
-          item.addEventListener("click", () => openPanelForEntry(rec))
+          item.addEventListener("click", (e) => {
+            e.stopPropagation()
+            openPanelForEntry(rec)
+          })
           othersContainer.appendChild(item)
         })
       } else {
@@ -309,7 +388,6 @@ function renderTimetable(timetable, weekKey) {
         othersContainer.appendChild(empty)
       }
     } else {
-      // Pour le weekend, section vide ou message
       const empty = document.createElement("div")
       empty.className = "empty-others weekend-others"
       empty.textContent = "Weekend"
@@ -325,16 +403,23 @@ function renderTimetable(timetable, weekKey) {
   setupDaySelector()
 
   if (window.currentMobileDay === undefined) {
-    window.currentMobileDay = 0
+    // Set to today if it's in this week, otherwise Monday
+    const todayIdx = today.getDay() === 0 ? 6 : today.getDay() - 1
+    window.currentMobileDay = todayIdx
   }
   updateMobileDayView()
+  updateStats()
 }
 
+// ============== DAY SELECTOR ==============
 function setupDaySelector() {
   const selector = getEl("daySelector")
   if (!selector) return
 
   const days = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"]
+  const today = new Date()
+  const todayIdx = today.getDay() === 0 ? 6 : today.getDay() - 1
+
   selector.innerHTML = ""
   selector.classList.remove("hidden")
 
@@ -343,6 +428,9 @@ function setupDaySelector() {
     btn.textContent = day
     btn.dataset.dayIndex = idx
     btn.className = "btn"
+    if (idx === todayIdx) {
+      btn.classList.add("today")
+    }
     btn.addEventListener("click", () => {
       window.currentMobileDay = idx
       updateMobileDayView()
@@ -380,6 +468,7 @@ function updateMobileDayView() {
   })
 }
 
+// ============== ENTRY PANEL ==============
 function openSlotFromTimetable(ls) {
   const registry = window._registry || []
   const match = registry.find((e) =>
@@ -392,137 +481,324 @@ function openSlotFromTimetable(ls) {
       audio_source: ls.cours,
       created_at: new Date().toISOString(),
       transcription_text: "",
-      resume_text: "Aucun enregistrement trouvé pour ce cours",
+      resume_text:
+        "Aucun enregistrement trouvé pour ce cours.\n\nProfesseur: " +
+        ls.prof +
+        "\nSalle: " +
+        ls.salle +
+        "\nHoraire: " +
+        ls.debut +
+        " - " +
+        ls.fin,
     })
   }
 }
 
 function openPanelForEntry(entry) {
+  const isMobile = window.innerWidth <= 900
+
+  function transformText(raw) {
+    if (!raw) return ""
+    let t = raw
+    t = t.replace(/\*\*(.+?)\*\*/g, (m, p1) => `<strong>${p1}</strong>`)
+    t = t.replace(/\*\*/g, "")
+
+    const lines = t.split(/\r?\n/)
+    const out = []
+    let inList = false
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim()
+      const m = line.match(/^\s*(\d+)\s*\.\s*(.*)$/)
+      if (m) {
+        if (!inList) {
+          out.push("<ol>")
+          inList = true
+        }
+        out.push(`<li>${m[2]}</li>`)
+      } else {
+        if (inList) {
+          out.push("</ol>")
+          inList = false
+        }
+        if (line === "") {
+          out.push("<p></p>")
+        } else if (line.startsWith("##")) {
+          out.push(`<h4>${line.replace(/^#+\s*/, "")}</h4>`)
+        } else {
+          out.push(`<p>${line}</p>`)
+        }
+      }
+    }
+    if (inList) out.push("</ol>")
+    return out.join("")
+  }
+
+  const speechRate = Number.parseFloat(localStorage.getItem("speechRate") || "1")
+
+  // Mobile full-page view
+  if (isMobile) {
+    const existing = document.querySelector(".entry-page")
+    if (existing) existing.remove()
+
+    const page = document.createElement("div")
+    page.className = "entry-page"
+
+    const header = document.createElement("div")
+    header.className = "entry-header"
+    const back = document.createElement("button")
+    back.className = "back-btn"
+    back.textContent = "← Retour"
+    back.addEventListener("click", () => {
+      if (window.speechSynthesis) window.speechSynthesis.cancel()
+      page.style.transform = "translateX(100%)"
+      setTimeout(() => page.remove(), 300)
+    })
+
+    const title = document.createElement("div")
+    title.className = "entry-title"
+    const raw = entry.resume_text || entry.transcription_text || ""
+    const quoted = extractQuotedTitle(raw)
+    title.textContent = quoted || entry.audio_source || entry.id
+    header.appendChild(back)
+    header.appendChild(title)
+    page.appendChild(header)
+
+    const meta = document.createElement("div")
+    meta.className = "entry-meta"
+    const d = new Date(entry.created_at || "")
+    meta.textContent = d.getFullYear()
+      ? d.toLocaleDateString("fr-FR", {
+          weekday: "long",
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : ""
+    page.appendChild(meta)
+
+    const controls = document.createElement("div")
+    controls.className = "controls-row"
+
+    let isPlaying = false
+    const playBtn = document.createElement("button")
+    playBtn.className = "btn-small playBtn"
+    playBtn.innerHTML = "▶ Écouter"
+    playBtn.addEventListener("click", () => {
+      const text = entry.resume_text || entry.transcription_text || ""
+      if (!text) return
+      if ("speechSynthesis" in window) {
+        if (isPlaying) {
+          window.speechSynthesis.cancel()
+          playBtn.innerHTML = "▶ Écouter"
+          playBtn.classList.remove("playing")
+          isPlaying = false
+        } else {
+          const u = new SpeechSynthesisUtterance(text)
+          u.lang = "fr-FR"
+          u.rate = speechRate
+          u.onend = () => {
+            playBtn.innerHTML = "▶ Écouter"
+            playBtn.classList.remove("playing")
+            isPlaying = false
+          }
+          window.speechSynthesis.cancel()
+          window.speechSynthesis.speak(u)
+          playBtn.innerHTML = "⏹ Stop"
+          playBtn.classList.add("playing")
+          isPlaying = true
+        }
+      }
+    })
+
+    const copyBtn = document.createElement("button")
+    copyBtn.className = "btn-small copyBtn"
+    copyBtn.innerHTML = "📋 Copier"
+    copyBtn.addEventListener("click", () => {
+      const txt = entry.resume_text || entry.transcription_text || ""
+      navigator.clipboard.writeText(txt).then(() => {
+        showToast("Copié dans le presse-papier", "success")
+      })
+    })
+
+    const exportBtn = document.createElement("button")
+    exportBtn.className = "btn-small exportBtn"
+    exportBtn.innerHTML = "📥 Exporter"
+    exportBtn.addEventListener("click", () => {
+      const blob = new Blob([entry.transcription_text || entry.resume_text || ""], { type: "text/plain;charset=utf-8" })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `${entry.audio_source || entry.id || "transcription"}.txt`
+      a.click()
+      URL.revokeObjectURL(url)
+      showToast("Fichier exporté", "success")
+    })
+
+    controls.appendChild(playBtn)
+    controls.appendChild(copyBtn)
+    controls.appendChild(exportBtn)
+    page.appendChild(controls)
+
+    const content = document.createElement("div")
+    content.className = "entry-content"
+    content.innerHTML = transformText(entry.resume_text || entry.transcription_text || "")
+    page.appendChild(content)
+
+    document.body.appendChild(page)
+    return
+  }
+
+  // Desktop modal view
   const modal = getEl("modal")
   const content = getEl("modalBody")
-  if (modal) modal.classList.remove("hidden")
   if (!content) return
-
+  if (modal) modal.classList.remove("hidden")
   content.innerHTML = ""
+
   const h = document.createElement("h3")
-  h.textContent = entry.audio_source || entry.id
+  const quoted = extractQuotedTitle(entry.resume_text || entry.transcription_text || "")
+  h.textContent = quoted || entry.audio_source || entry.id
+
   const date = document.createElement("div")
   date.className = "meta"
-  date.textContent = entry.created_at || ""
+  const d = new Date(entry.created_at || "")
+  date.textContent = d.getFullYear()
+    ? d.toLocaleDateString("fr-FR", {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : ""
+
   content.appendChild(h)
   content.appendChild(date)
 
+  const html = transformText(entry.resume_text || entry.transcription_text || "")
   const summary = document.createElement("div")
   summary.id = "summary"
-  summary.innerHTML = `<h4>Résumé</h4><div>${(entry.resume_text || entry.transcription_text || "(vide)").slice(0, 800)}</div>`
+  summary.innerHTML = `<h4>📝 Résumé</h4>${html}`
   content.appendChild(summary)
-
-  const more = document.createElement("div")
-  more.className = "showMore"
-  more.textContent = "Afficher plus"
-  content.appendChild(more)
-
-  const full = document.createElement("div")
-  full.id = "fullText"
-  full.style.display = "none"
-
-  const searchBox = document.createElement("div")
-  searchBox.className = "searchBox"
-  const inp = document.createElement("input")
-  inp.placeholder = "Rechercher..."
-  const btn = document.createElement("button")
-  btn.textContent = "Rechercher"
-  btn.className = "btn-small"
 
   const controls = document.createElement("div")
   controls.className = "controls-row"
-  const copyBtn = document.createElement("button")
-  copyBtn.className = "btn-small copyBtn"
-  copyBtn.textContent = "Copier"
-  const exportBtn = document.createElement("button")
-  exportBtn.className = "btn-small exportBtn"
-  exportBtn.textContent = "Exporter"
+
+  let isPlaying = false
   const playBtn = document.createElement("button")
-  playBtn.className = "btn-small"
-  playBtn.textContent = "▶ Écouter"
-  controls.appendChild(playBtn)
-  controls.appendChild(copyBtn)
-  controls.appendChild(exportBtn)
-  content.appendChild(controls)
-
-  searchBox.appendChild(inp)
-  searchBox.appendChild(btn)
-  full.appendChild(searchBox)
-
-  const pre = document.createElement("pre")
-  pre.textContent = entry.transcription_text || entry.resume_text || ""
-  full.appendChild(pre)
-  content.appendChild(full)
-
-  more.addEventListener("click", () => {
-    full.style.display = full.style.display === "none" ? "block" : "none"
-    more.textContent = full.style.display === "none" ? "Afficher plus" : "Masquer"
-  })
-
-  btn.addEventListener("click", () => {
-    const q = inp.value.trim()
-    if (!q) return
-    const re = new RegExp(q, "ig")
-    const txt = entry.transcription_text || entry.resume_text || ""
-    const matches = [...txt.matchAll(re)]
-    if (matches.length === 0) {
-      alert("Aucune occurrence")
-    } else {
-      const highlighted = txt.replace(re, (m) => `<<${m}>>`)
-      pre.innerHTML = highlighted.replace(/<<(.+?)>>/g, "<mark>$1</mark>")
+  playBtn.className = "btn-small playBtn"
+  playBtn.innerHTML = "▶ Écouter"
+  playBtn.addEventListener("click", () => {
+    const text = entry.resume_text || entry.transcription_text || ""
+    if (!text) return
+    if ("speechSynthesis" in window) {
+      if (isPlaying) {
+        window.speechSynthesis.cancel()
+        playBtn.innerHTML = "▶ Écouter"
+        playBtn.classList.remove("playing")
+        isPlaying = false
+      } else {
+        const u = new SpeechSynthesisUtterance(text)
+        u.lang = "fr-FR"
+        u.rate = speechRate
+        u.onend = () => {
+          playBtn.innerHTML = "▶ Écouter"
+          playBtn.classList.remove("playing")
+          isPlaying = false
+        }
+        window.speechSynthesis.cancel()
+        window.speechSynthesis.speak(u)
+        playBtn.innerHTML = "⏹ Stop"
+        playBtn.classList.add("playing")
+        isPlaying = true
+      }
     }
   })
 
+  const copyBtn = document.createElement("button")
+  copyBtn.className = "btn-small copyBtn"
+  copyBtn.innerHTML = "📋 Copier"
   copyBtn.addEventListener("click", () => {
     const txt = entry.resume_text || entry.transcription_text || ""
-    navigator.clipboard.writeText(txt)
-    alert("Copié!")
+    navigator.clipboard.writeText(txt).then(() => {
+      showToast("Copié dans le presse-papier", "success")
+    })
   })
 
+  const exportBtn = document.createElement("button")
+  exportBtn.className = "btn-small exportBtn"
+  exportBtn.innerHTML = "📥 Exporter"
   exportBtn.addEventListener("click", () => {
-    const blob = new Blob([entry.transcription_text || entry.resume_text || ""], {
-      type: "text/plain;charset=utf-8",
-    })
+    const blob = new Blob([entry.transcription_text || entry.resume_text || ""], { type: "text/plain;charset=utf-8" })
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
     a.href = url
     a.download = `${entry.audio_source || entry.id || "transcription"}.txt`
     a.click()
     URL.revokeObjectURL(url)
+    showToast("Fichier exporté", "success")
   })
 
-  playBtn.addEventListener("click", () => {
-    const text = entry.resume_text || entry.transcription_text || ""
-    if (!text) return alert("Aucun texte")
-    if ("speechSynthesis" in window) {
-      const u = new SpeechSynthesisUtterance(text)
-      u.lang = "fr-FR"
-      window.speechSynthesis.cancel()
-      window.speechSynthesis.speak(u)
-    } else {
-      alert("Non supporté")
-    }
+  controls.appendChild(playBtn)
+  controls.appendChild(copyBtn)
+  controls.appendChild(exportBtn)
+  content.appendChild(controls)
+
+  const more = document.createElement("button")
+  more.className = "showMore"
+  more.textContent = "📄 Afficher la transcription complète"
+  content.appendChild(more)
+
+  const full = document.createElement("div")
+  full.id = "fullText"
+  full.style.display = "none"
+  const pre = document.createElement("pre")
+  pre.style.whiteSpace = "pre-wrap"
+  pre.textContent = ""
+  full.appendChild(pre)
+  content.appendChild(full)
+
+  more.addEventListener("click", () => {
+    const raw = entry.transcription_text || entry.resume_text || ""
+    pre.textContent = raw
+    full.style.display = "block"
+    more.style.display = "none"
   })
 }
 
+// ============== MODAL HANDLING ==============
 const closeBtn = getEl("closeModal")
 if (closeBtn) {
   closeBtn.addEventListener("click", () => {
     const modal = getEl("modal")
     if (modal) modal.classList.add("hidden")
+    if (window.speechSynthesis) window.speechSynthesis.cancel()
   })
 }
 
+// Close modal on backdrop click
+document.addEventListener("click", (e) => {
+  if (e.target.classList.contains("modal-backdrop")) {
+    const modal = e.target.closest(".modal")
+    if (modal) {
+      modal.classList.add("hidden")
+      if (window.speechSynthesis) window.speechSynthesis.cancel()
+    }
+  }
+})
+
+// ============== WEEK NAVIGATION ==============
 function setupWeekNavigation() {
   const prev = getEl("prevWeek")
   const next = getEl("nextWeek")
+  const today = getEl("todayBtn")
+
   if (prev) prev.addEventListener("click", () => changeWeek(-1))
   if (next) next.addEventListener("click", () => changeWeek(1))
+  if (today) today.addEventListener("click", goToToday)
 }
 
 function changeWeek(delta) {
@@ -534,13 +810,224 @@ function changeWeek(delta) {
   window.currentIsoWeek = base.toISOString().slice(0, 10)
   const wkKey = weekKeyFromDate(window.currentIsoWeek)
   const wl = getEl("weekLabel")
-  if (wl) wl.textContent = wkKey || "semaine_A"
+  if (wl) wl.textContent = wkKey === "semaine_A" ? "Semaine A" : "Semaine B"
+
   fetchJson("timetable.json").then((t) => {
     window._timetable = t
     renderTimetable(t, wkKey || "semaine_A")
   })
 }
 
+function goToToday() {
+  const today = new Date()
+  window.currentIsoWeek = today.toISOString().slice(0, 10)
+  window.currentMobileDay = today.getDay() === 0 ? 6 : today.getDay() - 1
+  const wkKey = weekKeyFromDate(window.currentIsoWeek)
+  const wl = getEl("weekLabel")
+  if (wl) wl.textContent = wkKey === "semaine_A" ? "Semaine A" : "Semaine B"
+
+  fetchJson("timetable.json").then((t) => {
+    window._timetable = t
+    renderTimetable(t, wkKey || "semaine_A")
+  })
+  showToast("Retour à aujourd'hui", "info")
+}
+
+// ============== SEARCH FUNCTIONALITY ==============
+function setupSearch() {
+  const searchToggle = getEl("searchToggle")
+  const searchBar = getEl("searchBar")
+  const searchInput = getEl("searchInput")
+  const searchClear = getEl("searchClear")
+
+  if (searchToggle && searchBar) {
+    searchToggle.addEventListener("click", () => {
+      searchBar.classList.toggle("hidden")
+      if (!searchBar.classList.contains("hidden") && searchInput) {
+        searchInput.focus()
+      }
+    })
+  }
+
+  if (searchClear && searchInput) {
+    searchClear.addEventListener("click", () => {
+      searchInput.value = ""
+      clearSearchHighlights()
+    })
+  }
+
+  if (searchInput) {
+    let debounce
+    searchInput.addEventListener("input", () => {
+      clearTimeout(debounce)
+      debounce = setTimeout(() => {
+        performSearch(searchInput.value)
+      }, 300)
+    })
+  }
+}
+
+function performSearch(query) {
+  clearSearchHighlights()
+  if (!query || query.length < 2) return
+
+  const q = query.toLowerCase()
+  const courseCards = document.querySelectorAll(".course-card")
+  const recordingCards = document.querySelectorAll(".recording-card, .recording-item")
+
+  let found = 0
+
+  courseCards.forEach((card) => {
+    const info = JSON.parse(card.dataset.info || "{}")
+    const text = `${info.cours || ""} ${info.prof || ""} ${info.salle || ""}`.toLowerCase()
+    if (text.includes(q)) {
+      card.classList.add("search-highlight")
+      found++
+    }
+  })
+
+  recordingCards.forEach((card) => {
+    const text = card.textContent.toLowerCase()
+    if (text.includes(q)) {
+      card.classList.add("search-highlight")
+      found++
+    }
+  })
+
+  if (found > 0) {
+    showToast(`${found} résultat(s) trouvé(s)`, "success")
+  } else {
+    showToast("Aucun résultat", "info")
+  }
+}
+
+function clearSearchHighlights() {
+  document.querySelectorAll(".search-highlight").forEach((el) => {
+    el.classList.remove("search-highlight")
+  })
+}
+
+// ============== STATS PANEL ==============
+function setupStats() {
+  const statsToggle = getEl("statsToggle")
+  const statsPanel = getEl("statsPanel")
+
+  if (statsToggle && statsPanel) {
+    statsToggle.addEventListener("click", () => {
+      statsPanel.classList.toggle("hidden")
+    })
+  }
+}
+
+// ============== THEME TOGGLE ==============
+function setupTheme() {
+  const themeToggle = getEl("themeToggle")
+  const darkModeCheck = getEl("darkModeCheck")
+
+  const savedTheme = localStorage.getItem("theme")
+  if (savedTheme === "dark") {
+    document.documentElement.setAttribute("data-theme", "dark")
+    if (darkModeCheck) darkModeCheck.checked = true
+    if (themeToggle) themeToggle.textContent = "☀️"
+  }
+
+  if (themeToggle) {
+    themeToggle.addEventListener("click", () => {
+      toggleTheme()
+    })
+  }
+
+  if (darkModeCheck) {
+    darkModeCheck.addEventListener("change", () => {
+      toggleTheme()
+    })
+  }
+}
+
+function toggleTheme() {
+  const themeToggle = getEl("themeToggle")
+  const darkModeCheck = getEl("darkModeCheck")
+
+  const isDark = document.documentElement.getAttribute("data-theme") === "dark"
+
+  if (isDark) {
+    document.documentElement.removeAttribute("data-theme")
+    localStorage.setItem("theme", "light")
+    if (themeToggle) themeToggle.textContent = "🌙"
+    if (darkModeCheck) darkModeCheck.checked = false
+  } else {
+    document.documentElement.setAttribute("data-theme", "dark")
+    localStorage.setItem("theme", "dark")
+    if (themeToggle) themeToggle.textContent = "☀️"
+    if (darkModeCheck) darkModeCheck.checked = true
+  }
+}
+
+// ============== SETTINGS ==============
+function setupSettings() {
+  const settingsToggle = getEl("settingsToggle")
+  const settingsModal = getEl("settingsModal")
+  const closeSettings = getEl("closeSettings")
+  const compactCheck = getEl("compactCheck")
+  const speechRate = getEl("speechRate")
+  const exportAll = getEl("exportAll")
+  const clearCache = getEl("clearCache")
+
+  if (settingsToggle && settingsModal) {
+    settingsToggle.addEventListener("click", () => {
+      settingsModal.classList.remove("hidden")
+    })
+  }
+
+  if (closeSettings && settingsModal) {
+    closeSettings.addEventListener("click", () => {
+      settingsModal.classList.add("hidden")
+    })
+  }
+
+  // Load saved settings
+  if (compactCheck) {
+    compactCheck.checked = localStorage.getItem("compact") === "true"
+    if (compactCheck.checked) {
+      document.querySelector(".container")?.classList.add("compact")
+    }
+    compactCheck.addEventListener("change", () => {
+      localStorage.setItem("compact", compactCheck.checked)
+      document.querySelector(".container")?.classList.toggle("compact", compactCheck.checked)
+    })
+  }
+
+  if (speechRate) {
+    speechRate.value = localStorage.getItem("speechRate") || "1"
+    speechRate.addEventListener("change", () => {
+      localStorage.setItem("speechRate", speechRate.value)
+    })
+  }
+
+  if (exportAll) {
+    exportAll.addEventListener("click", () => {
+      const registry = window._registry || []
+      const blob = new Blob([JSON.stringify(registry, null, 2)], { type: "application/json" })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = "audiocours-export.json"
+      a.click()
+      URL.revokeObjectURL(url)
+      showToast("Données exportées", "success")
+    })
+  }
+
+  if (clearCache) {
+    clearCache.addEventListener("click", () => {
+      localStorage.clear()
+      showToast("Cache vidé", "success")
+      setTimeout(() => location.reload(), 1000)
+    })
+  }
+}
+
+// ============== MAIN ==============
 async function main() {
   try {
     const registry = await fetchJson("registry.json")
@@ -550,6 +1037,10 @@ async function main() {
     window._timetable = timetable
 
     setupWeekNavigation()
+    setupSearch()
+    setupStats()
+    setupTheme()
+    setupSettings()
 
     const loading = getEl("loading")
     if (loading) loading.style.display = "none"
@@ -558,22 +1049,57 @@ async function main() {
       const latest = registry[registry.length - 1]
       const wk = weekKeyFromDate(latest.created_at || latest.updated_at || latest.date || "")
       const wl = getEl("weekLabel")
-      if (wl) wl.textContent = wk || "semaine_A"
+      if (wl) wl.textContent = wk === "semaine_A" ? "Semaine A" : "Semaine B"
       window.currentIsoWeek = (latest.created_at || new Date().toISOString()).slice(0, 10)
       renderTimetable(timetable, wk || "semaine_A")
     } else {
+      const wl = getEl("weekLabel")
+      if (wl) wl.textContent = "Semaine A"
       renderTimetable(timetable, "semaine_A")
     }
 
     window.addEventListener("resize", () => {
       updateMobileDayView()
     })
+
+    // Keyboard shortcuts
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        const modal = getEl("modal")
+        const settingsModal = getEl("settingsModal")
+        const entryPage = document.querySelector(".entry-page")
+
+        if (modal && !modal.classList.contains("hidden")) {
+          modal.classList.add("hidden")
+          if (window.speechSynthesis) window.speechSynthesis.cancel()
+        }
+        if (settingsModal && !settingsModal.classList.contains("hidden")) {
+          settingsModal.classList.add("hidden")
+        }
+        if (entryPage) {
+          entryPage.remove()
+          if (window.speechSynthesis) window.speechSynthesis.cancel()
+        }
+      }
+
+      if (e.ctrlKey && e.key === "f") {
+        e.preventDefault()
+        const searchBar = getEl("searchBar")
+        const searchInput = getEl("searchInput")
+        if (searchBar) {
+          searchBar.classList.remove("hidden")
+          if (searchInput) searchInput.focus()
+        }
+      }
+    })
   } catch (e) {
     const loading = getEl("loading")
     if (loading) {
       loading.textContent = "Erreur de chargement"
+      loading.classList.remove("hidden")
     }
     console.error(e)
+    showToast("Erreur de chargement", "error")
   }
 }
 
