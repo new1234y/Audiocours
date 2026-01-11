@@ -1,14 +1,9 @@
 [
   {
     "id": "2026 20 10",
-    "audio_source": "\"Test Initial\"",
+    "audio_source": "\"Introduction à l'apprentissage par l'IA\"",
     "transcription_text": " La première fois, on va tester. C'est très bien marché. Et c'était en plus la puissité gratuit pour vrai. C'est un truc qui se débloque de plus en plus.",
-    "resume_json": {
-      "titre": "Test Initial",
-      "resume_detaille": "Le cours a commencé par un test initial, qui s'est avéré efficace. Il s'agit d'une ressource gratuite et accessible de plus en plus disponible.",
-      "perturbations": [],
-      "devoirs": []
-    },
-    "created_at": "2026-01-10T23:53:30.174106Z"
+    "resume_text": "\"Introduction à l'apprentissage par l'IA\"\nRésumé détaillé : La première séance de ce cours a consisté en un test initial, qui s'est avéré efficace. L'un des points clés abordés est l'accessibilité croissante des ressources d'apprentissage gratuites, notamment via l'intelligence artificielle. Le cours semble débuter par une évaluation de la compréhension des participants et par l'exploration des opportunités offertes par l'IA comme outil pédagogique gratuit.\n\nPerturbations potentielles : Aucune perturbation n'a été mentionnée dans le texte.\n\nDevoirs pour la prochaine fois : Aucune devoirs n'ont été attribués.",
+    "created_at": "2026-01-11T00:00:45.831000Z"
   }
 ]
