@@ -1,143 +1,392 @@
 // =====================================================
-// APPLICATION PRINCIPALE
+// APPLICATION MOBILE-FIRST
 // =====================================================
 
-// État de l'application
-let currentWeek = "semaine_A"
+let currentWeekOffset = 0 // 0 = current week, -1 = last week, +1 = next week
+let currentDayIndex = 0
 let audioRecordings = []
 let orphanRecordings = []
 let audioPlayer = null
-let orphanAudioPlayer = null
 let currentRecording = null
-let currentOrphanRecording = null
+let refreshInterval = null
 
-function isSupabaseConfigured() {
-  return SUPABASE_CONFIG.url && SUPABASE_CONFIG.apiKey
-}
+
 
 // =====================================================
 // INITIALISATION
 // =====================================================
 
 document.addEventListener("DOMContentLoaded", async () => {
-  // Initialiser les lecteurs audio
   audioPlayer = document.getElementById("audio-player")
-  orphanAudioPlayer = document.getElementById("orphan-audio-player")
 
-  // Initialiser Supabase si configuré
-  if (isSupabaseConfigured()) {
+  // Initialize Supabase if configured
+  if (SUPABASE_CONFIG.url && SUPABASE_CONFIG.apiKey) {
     try {
       supabase = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.apiKey)
       await loadAudioRecordings()
+
+      refreshInterval = setInterval(loadAudioRecordings, 10000)
     } catch (error) {
-      console.error("Erreur connexion Supabase:", error)
+      console.error("Erreur Supabase:", error)
+      loadDemoData()
     }
   } else {
-    loadDemoOrphanRecordings()
+    loadDemoData()
   }
 
-  // Générer l'emploi du temps
-  generateTimetable()
-  populateMatiereFilter()
-  displayOrphanRecordings()
+  // Set current day
+  const today = new Date().getDay()
+  currentDayIndex = today === 0 ? 0 : today === 6 ? 4 : today - 1
 
-  // Event listeners
+  updateDisplay()
   setupEventListeners()
 
-  // Masquer le loader
   document.getElementById("loader").classList.add("hidden")
 })
 
 // =====================================================
-// GESTION DE L'EMPLOI DU TEMPS
+// WEEK CALCULATION
 // =====================================================
 
-function generateTimetable() {
-  const timetableEl = document.getElementById("timetable")
-  const weekData = TIMETABLE_DATA[currentWeek]
+function getCurrentWeekInfo() {
+  const now = new Date()
+  const offsetDate = new Date(now)
+  offsetDate.setDate(now.getDate() + currentWeekOffset * 7)
 
-  // Vider le contenu
-  timetableEl.innerHTML = ""
+  // Calculate week number from reference
+  const diffTime = offsetDate - WEEK_A_START
+  const diffWeeks = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 7))
+  const isWeekA = diffWeeks % 2 === 0
 
-  // Créer l'en-tête
-  timetableEl.innerHTML = `
-        <div class="timetable-header">Heures</div>
-        ${DAYS_DISPLAY.map((day) => `<div class="timetable-header">${day}</div>`).join("")}
-    `
+  // Get Monday of the week
+  const monday = new Date(offsetDate)
+  const day = monday.getDay()
+  const diff = monday.getDate() - day + (day === 0 ? -6 : 1)
+  monday.setDate(diff)
 
-  // Créer les lignes pour chaque créneau horaire
-  TIME_SLOTS.forEach((slot, rowIndex) => {
-    // Cellule des heures
-    const timeCell = document.createElement("div")
-    timeCell.className = "time-slot"
-    timeCell.innerHTML = `${slot.debut}<br>${slot.fin}`
-    timetableEl.appendChild(timeCell)
+  // Get week dates
+  const dates = []
+  for (let i = 0; i < 5; i++) {
+    const date = new Date(monday)
+    date.setDate(monday.getDate() + i)
+    dates.push(date)
+  }
 
-    // Cellules pour chaque jour
-    DAYS.forEach((day) => {
-      const cell = document.createElement("div")
-      cell.className = "course-cell"
-      cell.dataset.day = day
-      cell.dataset.slot = rowIndex
+  return {
+    type: isWeekA ? "semaine_A" : "semaine_B",
+    label: isWeekA ? "Semaine A" : "Semaine B",
+    dates,
+    monday,
+  }
+}
 
-      // Trouver les cours qui commencent à ce créneau
-      const dayCourses = weekData[day] || []
-      const course = dayCourses.find((c) => c.debut === slot.debut)
+// =====================================================
+// DISPLAY
+// =====================================================
+
+function generateResponsiveTimetable(weekInfo) {
+  if (window.innerWidth < 768) {
+    // Mobile : cartes jour par jour
+    generateDailyCards(weekInfo)
+  } else {
+    // PC : tableau global
+    generateTableView(weekInfo)
+  }
+}
+
+// =====================================================
+// MOBILE - CARTES JOUR PAR JOUR
+// =====================================================
+
+function generateDailyCards(weekInfo) {
+  const container = document.getElementById("timetable-container")
+  container.innerHTML = ""
+
+  const weekData = TIMETABLE_DATA[weekInfo.type]
+
+  DAYS.forEach((day, dayIndex) => {
+    const dayCard = document.createElement("div")
+    dayCard.className = "day-card"
+    if (dayIndex === currentDayIndex) dayCard.classList.add("active")
+
+    // Date
+    const dateEl = document.createElement("div")
+    dateEl.className = "day-date"
+    dateEl.textContent = weekInfo.dates[dayIndex].toLocaleDateString("fr-FR", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+    })
+    dayCard.appendChild(dateEl)
+
+    const courses = weekData[day] || []
+    TIME_SLOTS.forEach(slot => {
+      const course = courses.find(c => c.debut === slot.debut)
+      const row = document.createElement("div")
+      row.className = "time-row"
+
+      const timeLabel = document.createElement("div")
+      timeLabel.className = "time-label"
+      timeLabel.textContent = slot.debut
+      row.appendChild(timeLabel)
 
       if (course) {
-        const card = createCourseCard(course, day, rowIndex)
-        cell.appendChild(card)
+        const recordings = getRecordingsForCourse(course.cours, day, weekInfo.dates[dayIndex])
+        const card = createCourseCard(course, day, weekInfo.dates[dayIndex], recordings)
+        row.appendChild(card)
+      } else {
+        const empty = document.createElement("div")
+        empty.className = "course-card empty-slot"
+        row.appendChild(empty)
       }
 
-      timetableEl.appendChild(cell)
+      dayCard.appendChild(row)
     })
+
+    container.appendChild(dayCard)
   })
 }
 
-function createCourseCard(course, day, slotIndex) {
+
+function generateTableView(weekInfo) {
+  const container = document.getElementById("timetable-container")
+  container.innerHTML = ""
+
+  const weekData = TIMETABLE_DATA[weekInfo.type]
+
+  const table = document.createElement("table")
+  table.className = "timetable-table"
+
+  // Header
+  const thead = document.createElement("thead")
+  const headerRow = document.createElement("tr")
+  headerRow.appendChild(document.createElement("th")) // colonne horaire vide
+  weekInfo.dates.forEach(date => {
+    const th = document.createElement("th")
+    th.textContent = date.toLocaleDateString("fr-FR", { weekday: "short", day: "numeric" })
+    th.style.padding = "8px"
+    headerRow.appendChild(th)
+  })
+  thead.appendChild(headerRow)
+  table.appendChild(thead)
+
+  // Body
+  const tbody = document.createElement("tbody")
+  TIME_SLOTS.forEach(slot => {
+    const row = document.createElement("tr")
+
+    // Horaire
+    const timeCell = document.createElement("td")
+    timeCell.textContent = slot.debut
+    timeCell.style.fontWeight = "bold"
+    timeCell.style.padding = "6px"
+    row.appendChild(timeCell)
+
+    weekInfo.dates.forEach((date, dayIndex) => {
+      const cell = document.createElement("td")
+      cell.style.padding = "4px"
+
+      const courses = weekData[DAYS[dayIndex]] || []
+      const course = courses.find(c => c.debut === slot.debut)
+      if (course) {
+        const recordings = getRecordingsForCourse(course.cours, DAYS[dayIndex], date)
+        const latestRecording = recordings[0]
+
+        const card = document.createElement("div")
+        card.className = "course-card"
+        if (latestRecording) {
+          card.classList.add("has-audio")
+          if (latestRecording.status) card.classList.add(`status-${latestRecording.status}`)
+        }
+
+        card.innerHTML = `
+          <div class="course-name">${course.cours}</div>
+          <div class="course-info">
+            <span>📍 ${course.salle}</span>
+            <span>${course.debut}-${course.fin}</span>
+          </div>
+          ${
+            latestRecording && latestRecording.status !== "done"
+              ? `<div class="course-badge processing">${getStatusLabel(latestRecording.status)}</div>`
+              : ""
+          }
+        `
+
+        card.addEventListener("click", () => openCourseModal(course, DAYS[dayIndex], date, recordings))
+        cell.appendChild(card)
+      } else {
+        const empty = document.createElement("div")
+        empty.className = "course-card empty-slot"
+        cell.appendChild(empty)
+      }
+
+      row.appendChild(cell)
+    })
+
+    tbody.appendChild(row)
+  })
+
+  table.appendChild(tbody)
+  container.appendChild(table)
+}
+
+const updateDisplay = () => {
+  const weekInfo = getCurrentWeekInfo()
+  document.getElementById("current-week-label").textContent = weekInfo.label
+  const startDate = weekInfo.dates[0].toLocaleDateString("fr-FR", { day: "numeric", month: "short" })
+  const endDate = weekInfo.dates[4].toLocaleDateString("fr-FR", { day: "numeric", month: "short" })
+  document.getElementById("week-dates").textContent = `${startDate} - ${endDate}`
+
+  updateDayNav(weekInfo)
+  generateResponsiveTimetable(weekInfo)
+  displayOrphanRecordings()
+}
+
+
+// Ajouter un listener pour redimensionnement
+window.addEventListener("resize", () => {
+  const weekInfo = getCurrentWeekInfo()
+  generateResponsiveTimetable(weekInfo)
+})
+
+function updateDayNav(weekInfo) {
+  const buttons = document.querySelectorAll(".day-btn")
+  const labels = ["L", "M", "M", "J", "V"]
+
+  buttons.forEach((btn, i) => {
+    const date = weekInfo.dates[i]
+    const dateStr = date.getDate()
+    btn.textContent = `${labels[i]}\n${dateStr}`
+    btn.style.lineHeight = "1.2"
+    btn.classList.toggle("active", i === currentDayIndex)
+  })
+}
+
+function generateTimetable(weekInfo) {
+  const container = document.getElementById("timetable-container")
+  container.innerHTML = ""
+
+  const weekData = TIMETABLE_DATA[weekInfo.type]
+
+  // Créer un tableau unique
+  const table = document.createElement("table")
+  table.className = "timetable-table" // tu peux ajouter un peu de CSS si besoin
+
+  // Header avec les jours
+  const thead = document.createElement("thead")
+  const headerRow = document.createElement("tr")
+  headerRow.appendChild(document.createElement("th")) // colonne vide pour horaires
+  weekInfo.dates.forEach((date) => {
+    const th = document.createElement("th")
+    th.textContent = date.toLocaleDateString("fr-FR", { weekday: "short", day: "numeric" })
+    th.style.padding = "8px"
+    headerRow.appendChild(th)
+  })
+  thead.appendChild(headerRow)
+  table.appendChild(thead)
+
+  // Body
+  const tbody = document.createElement("tbody")
+
+  TIME_SLOTS.forEach((slot) => {
+    const row = document.createElement("tr")
+
+    // Colonne horaire
+    const timeCell = document.createElement("td")
+    timeCell.textContent = slot.debut
+    timeCell.style.padding = "6px"
+    timeCell.style.fontWeight = "bold"
+    row.appendChild(timeCell)
+
+    // Colonne pour chaque jour
+    weekInfo.dates.forEach((date, dayIndex) => {
+      const cell = document.createElement("td")
+      cell.style.padding = "4px"
+
+      const courses = weekData[DAYS[dayIndex]] || []
+      const course = courses.find((c) => c.debut === slot.debut)
+      if (course) {
+        const recordings = getRecordingsForCourse(course.cours, DAYS[dayIndex], date)
+        const latestRecording = recordings[0]
+
+        // On reprend tes classes pour conserver le style
+        const card = document.createElement("div")
+        card.className = "course-card"
+        if (latestRecording) {
+          card.classList.add("has-audio")
+          if (latestRecording.status) card.classList.add(`status-${latestRecording.status}`)
+        }
+
+        card.innerHTML = `
+          <div class="course-name">${course.cours}</div>
+          <div class="course-info">
+            <span>📍 ${course.salle}</span>
+            <span>${course.debut}-${course.fin}</span>
+          </div>
+          ${
+            latestRecording && latestRecording.status !== "done"
+              ? `<div class="course-badge processing">${getStatusLabel(latestRecording.status)}</div>`
+              : ""
+          }
+        `
+
+        card.addEventListener("click", () => openCourseModal(course, DAYS[dayIndex], date, recordings))
+        cell.appendChild(card)
+      } else {
+        const empty = document.createElement("div")
+        empty.className = "course-card empty-slot"
+        empty.textContent = ""
+        cell.appendChild(empty)
+      }
+
+      row.appendChild(cell)
+    })
+
+    tbody.appendChild(row)
+  })
+
+  table.appendChild(tbody)
+  container.appendChild(table)
+}
+
+function createCourseCard(course, day, date, recordings) {
   const card = document.createElement("div")
   card.className = "course-card"
 
-  // Calculer la hauteur en fonction de la durée
-  const duration = calculateDuration(course.debut, course.fin)
-  const height = (duration / 60) * 60 - 4 // 60px par heure, moins les marges
-
-  // Calculer la position top
-  const slotStart = TIME_SLOTS[slotIndex]
-  const offset = calculateDuration(slotStart.debut, course.debut)
-  const top = (offset / 60) * 60
-
-  card.style.top = `${top + 2}px`
-  card.style.height = `${height}px`
-
-  // Vérifier s'il y a des enregistrements pour ce cours
-  const recordings = getRecordingsForCourse(course.cours, day)
-  const status = recordings.length > 0 ? recordings[0].status : null
-
-  if (status) {
-    card.classList.add(`status-${status}`)
+  const latestRecording = recordings[0]
+  if (latestRecording) {
+    card.classList.add("has-audio")
+    if (latestRecording.status) card.classList.add(`status-${latestRecording.status}`)
   }
 
   card.innerHTML = `
-        <div class="course-name">${course.cours}</div>
-        <div class="course-info">${course.salle}</div>
-        ${recordings.length > 0 ? '<div class="course-indicator has-audio"></div>' : ""}
-    `
+    <div class="course-name">${course.cours}</div>
+    <div class="course-info">
+      <span>📍 ${course.salle}</span>
+      <span>${course.debut}-${course.fin}</span>
+    </div>
+    ${
+      latestRecording && latestRecording.status !== "done"
+        ? `<div class="course-badge processing">${getStatusLabel(latestRecording.status)}</div>`
+        : ""
+    }
+  `
 
-  // Event click
-  card.addEventListener("click", () => openCourseModal(course, day, recordings))
-
+  card.addEventListener("click", () => openCourseModal(course, day, date, recordings))
   return card
 }
 
-function calculateDuration(start, end) {
-  const [startH, startM] = start.split(":").map(Number)
-  const [endH, endM] = end.split(":").map(Number)
-  return endH * 60 + endM - (startH * 60 + startM)
-}
+// =====================================================
+// LISTENER POUR REDIMENSIONNEMENT
+// =====================================================
+
+window.addEventListener("resize", () => {
+  const weekInfo = getCurrentWeekInfo()
+  generateResponsiveTimetable(weekInfo)
+})
 
 // =====================================================
-// GESTION DES ENREGISTREMENTS SUPABASE
+// RECORDINGS
 // =====================================================
 
 async function loadAudioRecordings() {
@@ -155,216 +404,130 @@ async function loadAudioRecordings() {
     audioRecordings = allRecordings.filter((rec) => rec.course_name || (rec.metadata && rec.metadata.course))
     orphanRecordings = allRecordings.filter((rec) => !rec.course_name && !(rec.metadata && rec.metadata.course))
 
-    // Rafraîchir l'affichage
-    generateTimetable()
-    displayOrphanRecordings()
+    updateDisplay()
   } catch (error) {
-    console.error("Erreur chargement enregistrements:", error)
+    console.error("Erreur chargement:", error)
   }
 }
 
-function loadDemoOrphanRecordings() {
+function loadDemoData() {
   orphanRecordings = [
     {
       id: 1,
-      audio_source: "demo_audio_1.mp3",
-      transcription_text:
-        "Ceci est un exemple de transcription pour un enregistrement qui n'est pas associé à un cours particulier. Il peut s'agir d'une réunion, d'une conférence ou d'un autre type d'événement audio que vous avez enregistré.",
+      audio_url: "#",
+      transcription_text: "Exemple de transcription pour un enregistrement non associé.",
       resume_text:
-        "Résumé de l'enregistrement: discussion générale sur divers sujets académiques et organisation personnelle.",
+        "**Résumé principal**\n\n1. Premier point important\n2. Deuxième élément\n\n**Conclusion:**\nTexte de conclusion",
       status: "done",
-      created_at: "2025-01-10T14:30:00",
-      timestamps: [
-        { word: "Ceci", start: 0.0 },
-        { word: "est", start: 0.3 },
-        { word: "un", start: 0.5 },
-        { word: "exemple", start: 0.7 },
-        { word: "de", start: 1.1 },
-        { word: "transcription", start: 1.3 },
-      ],
-    },
-    {
-      id: 2,
-      audio_source: "demo_audio_2.mp3",
-      transcription_text: "Deuxième enregistrement de démonstration avec une transcription plus courte.",
-      resume_text: "Notes rapides prises lors d'une session d'étude.",
-      status: "transcribing",
-      created_at: "2025-01-12T09:15:00",
-      timestamps: [],
-    },
-    {
-      id: 3,
-      audio_source: "demo_audio_3.mp3",
-      transcription_text: null,
-      resume_text: null,
-      status: "detected",
-      created_at: "2025-01-14T16:45:00",
-      timestamps: [],
-    },
-    {
-      id: 4,
-      audio_source: "demo_audio_4.mp3",
-      transcription_text:
-        "Enregistrement d'une conférence externe sur les nouvelles technologies éducatives et leur impact sur l'apprentissage moderne. Les intervenants ont discuté de l'importance de l'intelligence artificielle dans l'éducation.",
-      resume_text:
-        "Conférence sur les technologies éducatives: IA, apprentissage adaptatif, et outils numériques pour l'enseignement.",
-      status: "done",
-      created_at: "2025-01-08T11:00:00",
-      timestamps: [
-        { word: "Enregistrement", start: 0.0 },
-        { word: "d'une", start: 0.8 },
-        { word: "conférence", start: 1.2 },
-        { word: "externe", start: 1.9 },
-      ],
-    },
-    {
-      id: 5,
-      audio_source: "demo_audio_5.mp3",
-      transcription_text: "Erreur lors du traitement de cet enregistrement.",
-      resume_text: null,
-      status: "error",
-      created_at: "2025-01-11T13:20:00",
-      timestamps: [],
+      created_at: new Date().toISOString(),
     },
   ]
 }
 
-function getRecordingsForCourse(courseName, day) {
-  // Filtrer les enregistrements par nom de cours
-  return audioRecordings.filter((rec) => {
-    return rec.course_name === courseName || (rec.metadata && rec.metadata.course === courseName)
-  })
-}
-
-async function getAudioUrl(audioSource) {
-  if (!supabase || !audioSource) return null
-
-  try {
-    const { data } = supabase.storage.from(SUPABASE_CONFIG.storageBucket).getPublicUrl(audioSource)
-
-    return data?.publicUrl
-  } catch (error) {
-    console.error("Erreur récupération URL audio:", error)
-    return null
-  }
+function getRecordingsForCourse(courseName, day, date) {
+  return audioRecordings
+    .filter((rec) => {
+      const matchCourse = rec.course_name === courseName || (rec.metadata && rec.metadata.course === courseName)
+      return matchCourse
+    })
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
 }
 
 // =====================================================
-// ENREGISTREMENTS ORPHELINS (SANS COURS)
+// MODAL
 // =====================================================
 
-function displayOrphanRecordings() {
-  const grid = document.getElementById("orphan-recordings-grid")
-  const filterStatus = document.getElementById("orphan-filter-status")?.value || ""
+function openCourseModal(course, day, date, recordings) {
+  const modal = document.getElementById("modal")
 
-  let filteredRecordings = orphanRecordings
-  if (filterStatus) {
-    filteredRecordings = orphanRecordings.filter((rec) => rec.status === filterStatus)
+  document.getElementById("modal-title").textContent = course.cours
+  document.getElementById("modal-time").textContent = `🕐 ${course.debut} - ${course.fin}`
+  document.getElementById("modal-prof").textContent = `👨‍🏫 ${course.prof}`
+  document.getElementById("modal-salle").textContent = `📍 ${course.salle}`
+
+  if (recordings.length > 0) {
+    loadRecording(recordings[0])
+
+    if (recordings.length > 1) {
+      displayRecordingsList(recordings)
+    } else {
+      document.getElementById("recordings-list").classList.add("hidden")
+    }
+  } else {
+    clearModal()
   }
-
-  if (filteredRecordings.length === 0) {
-    grid.innerHTML = '<div class="orphan-empty"><p>Aucun enregistrement orphelin</p></div>'
-    return
-  }
-
-  // Créer les cartes dynamiquement et ajouter directement les listeners
-  grid.innerHTML = ""
-  filteredRecordings.forEach((rec) => {
-    const cardHtml = createOrphanCard(rec)
-    const temp = document.createElement("div")
-    temp.innerHTML = cardHtml
-    const cardEl = temp.firstElementChild
-
-    cardEl.addEventListener("click", () => openOrphanModal(rec))
-    grid.appendChild(cardEl)
-  })
-}
-
-function createOrphanCard(recording) {
-  const preview = recording.transcription_text
-    ? recording.transcription_text.substring(0, 150) + (recording.transcription_text.length > 150 ? "..." : "")
-    : "Aucune transcription disponible"
-
-  return `
-    <div class="orphan-card status-${recording.status}" data-id="${recording.id}">
-      <div class="orphan-card-header">
-        <div class="orphan-card-icon">🎙️</div>
-        <span class="orphan-card-status ${recording.status}">${getStatusLabel(recording.status)}</span>
-      </div>
-      <div class="orphan-card-title">Enregistrement #${recording.id}</div>
-      <div class="orphan-card-date">${formatDate(recording.created_at)}</div>
-      <div class="orphan-card-preview">${preview}</div>
-      <div class="orphan-card-footer">
-        <div class="orphan-card-meta">
-          <span>🎵</span>
-          <span>Audio disponible</span>
-        </div>
-        ${recording.resume_text ? '<div class="orphan-card-meta"><span>📝</span><span>Résumé</span></div>' : ""}
-      </div>
-    </div>
-  `
-}
-
-
-async function openOrphanModal(recording) {
-  currentOrphanRecording = recording
-
-  const modal = document.getElementById("orphan-modal")
-  modal.querySelector("#orphan-modal-title").textContent = `Enregistrement #${recording.id}`
-  modal.querySelector("#orphan-modal-date").textContent = `📅 ${formatDate(recording.created_at)}`
-  const statusEl = modal.querySelector("#orphan-audio-status")
-  statusEl.textContent = getStatusLabel(recording.status)
-  statusEl.className = `audio-status ${recording.status}`
-
-  // Charger l'audio depuis la colonne audio_url
-  orphanAudioPlayer.src = recording.audio_url || ""
-
-  // Transcription cliquable
-  const segments = recording.transcription_segments || []
-  displayOrphanTranscription(recording.transcription_text, segments)
-
-  // Afficher le résumé
-  displayOrphanResume(recording.resume_text)
 
   modal.classList.add("active")
+  document.body.style.overflow = "hidden"
 }
 
-// Transcription cliquable
-function displayOrphanTranscription(text, segments) {
-  const container = document.getElementById("orphan-transcription-text")
-  container.innerHTML = ""
+function loadRecording(recording) {
+  currentRecording = recording
 
-  if (!text) {
-    container.innerHTML = '<p class="placeholder">Aucune transcription disponible</p>'
+  // Show progress or audio
+  const progressSection = document.getElementById("progress-section")
+  const audioSection = document.getElementById("audio-section")
+  const searchBar = document.getElementById("search-bar")
+
+  if (recording.status !== "done") {
+    progressSection.classList.remove("hidden")
+    audioSection.classList.add("hidden")
+    searchBar.classList.add("hidden")
+
+    const progress = getProgressPercentage(recording.status)
+    document.getElementById("progress-fill").style.width = `${progress}%`
+    document.getElementById("progress-label").textContent = getStatusLabel(recording.status)
+  } else {
+    progressSection.classList.add("hidden")
+    audioSection.classList.remove("hidden")
+
+    if (recording.audio_url) {
+      audioPlayer.src = recording.audio_url
+    }
+
+    if (recording.transcription_text) {
+      searchBar.classList.remove("hidden")
+    } else {
+      searchBar.classList.add("hidden")
+    }
+  }
+
+  displayTranscription(recording.transcription_text, recording.transcription_segments)
+  displayResume(recording.resume_text)
+}
+
+function displayTranscription(text, segments) {
+  const container = document.getElementById("transcription-text")
+
+  if (!text && currentRecording.resume_text) {
+    container.innerHTML = '<p class="placeholder">Transcription indisponible</p>'
     return
   }
 
-  // Utiliser les segments pour le mapping start/end
-  if (segments && segments.length > 0) {
-    segments.forEach((seg) => {
-      // On peut splitter le texte en mots
-      const words = seg.text.split(" ")
-      let offset = seg.start
+  if (!text) {
+    container.innerHTML = '<p class="placeholder">Transcription en cours...</p>'
+    return
+  }
 
-      words.forEach((word) => {
+  if (segments && segments.length > 0) {
+    container.innerHTML = ""
+    segments.forEach((seg) => {
+      const words = seg.text.split(" ")
+      const duration = (seg.end - seg.start) / words.length
+
+      words.forEach((word, i) => {
         const span = document.createElement("span")
         span.className = "word"
-        span.dataset.start = offset
+        span.dataset.start = seg.start + i * duration
         span.textContent = word
         span.addEventListener("click", () => {
-          orphanAudioPlayer.currentTime = parseFloat(span.dataset.start)
-          orphanAudioPlayer.play()
-
-          // highlight
+          audioPlayer.currentTime = Number.parseFloat(span.dataset.start)
+          audioPlayer.play()
           container.querySelectorAll(".word").forEach((w) => w.classList.remove("active"))
           span.classList.add("active")
         })
         container.appendChild(span)
         container.appendChild(document.createTextNode(" "))
-
-        // Estimation simple du temps pour chaque mot
-        const wordDuration = (seg.end - seg.start) / words.length
-        offset += wordDuration
       })
     })
   } else {
@@ -372,162 +535,157 @@ function displayOrphanTranscription(text, segments) {
   }
 }
 
-function displayOrphanResume(text) {
-  const container = document.getElementById("orphan-resume-text")
-  container.innerHTML = text ? `<p>${text}</p>` : '<p class="placeholder">Aucun résumé disponible</p>'
-}
-function closeOrphanModal() {
-  document.getElementById("orphan-modal").classList.remove("active")
-  if (orphanAudioPlayer) {
-    orphanAudioPlayer.pause()
-  }
-}
-
-// =====================================================
-// MODAL ET DÉTAILS DU COURS
-// =====================================================
-
-async function openCourseModal(course, day, recordings) {
-  const modal = document.getElementById("modal")
-  const modalTitle = document.getElementById("modal-title")
-  const modalProf = document.getElementById("modal-prof")
-  const modalSalle = document.getElementById("modal-salle")
-  const modalTime = document.getElementById("modal-time")
-
-  // Mettre à jour les infos du modal
-  modalTitle.textContent = course.cours
-  modalProf.textContent = `👨‍🏫 ${course.prof}`
-  modalSalle.textContent = `📍 ${course.salle}`
-  modalTime.textContent = `🕐 ${course.debut} - ${course.fin}`
-
-  // Afficher les enregistrements
-  displayRecordings(recordings)
-
-  // Si un enregistrement existe, le charger
-  if (recordings.length > 0) {
-    await loadRecording(recordings[0])
-  } else {
-    clearAudioSection()
-  }
-
-  // Afficher le modal
-  modal.classList.add("active")
-}
-
-function displayRecordings(recordings) {
-  const container = document.getElementById("recordings-container")
-
-  if (recordings.length === 0) {
-    container.innerHTML = '<p class="placeholder">Aucun enregistrement pour ce cours</p>'
-    return
-  }
-
-  container.innerHTML = recordings
-    .map(
-      (rec, index) => `
-        <div class="recording-item ${index === 0 ? "active" : ""}" data-id="${rec.id}">
-            <div class="recording-icon">🎙️</div>
-            <div class="recording-details">
-                <div class="recording-date">${formatDate(rec.created_at)}</div>
-                <div class="recording-status">${getStatusLabel(rec.status)}</div>
-            </div>
-        </div>
-    `,
-    )
-    .join("")
-
-  // Event listeners pour les enregistrements
-  container.querySelectorAll(".recording-item").forEach((item) => {
-    item.addEventListener("click", async () => {
-      const rec = recordings.find((r) => r.id == item.dataset.id)
-      if (rec) {
-        container.querySelectorAll(".recording-item").forEach((i) => i.classList.remove("active"))
-        item.classList.add("active")
-        await loadRecording(rec)
-      }
-    })
-  })
-}
-
-async function loadRecording(recording) {
-  currentRecording = recording
-
-  // Mettre à jour le statut
-  const statusEl = document.getElementById("audio-status")
-  statusEl.textContent = getStatusLabel(recording.status)
-  statusEl.className = `audio-status ${recording.status}`
-
-  // Charger l'audio
-  if (recording.audio_source) {
-    const audioUrl = await getAudioUrl(recording.audio_source)
-    if (audioUrl) {
-      audioPlayer.src = audioUrl
-    }
-  }
-
-  // Afficher la transcription
-  displayTranscription(recording.transcription_text, recording.timestamps)
-
-  // Afficher le résumé
-  displayResume(recording.resume_text)
-}
-
-function displayTranscription(text, timestamps) {
-  const container = document.getElementById("transcription-text")
-
-  if (!text) {
-    container.innerHTML = '<p class="placeholder">Aucune transcription disponible</p>'
-    return
-  }
-
-  // Si on a des timestamps, rendre les mots cliquables
-  if (timestamps && Array.isArray(timestamps)) {
-    const wordsHtml = timestamps
-      .map((item, index) => {
-        const word = item.word || item.text || ""
-        const start = item.start || item.timestamp || 0
-        return `<span class="word" data-start="${start}" data-index="${index}">${word}</span>`
-      })
-      .join(" ")
-
-    container.innerHTML = wordsHtml
-
-    // Event listeners pour les mots
-    container.querySelectorAll(".word").forEach((wordEl) => {
-      wordEl.addEventListener("click", () => {
-        const startTime = Number.parseFloat(wordEl.dataset.start)
-        if (audioPlayer && !isNaN(startTime)) {
-          audioPlayer.currentTime = startTime
-          audioPlayer.play()
-
-          // Highlight le mot actif
-          container.querySelectorAll(".word").forEach((w) => w.classList.remove("active"))
-          wordEl.classList.add("active")
-        }
-      })
-    })
-  } else {
-    container.innerHTML = `<p>${text}</p>`
-  }
-}
-
 function displayResume(text) {
   const container = document.getElementById("resume-text")
+
+  if (!text && currentRecording.transcription_text) {
+    container.innerHTML = '<p class="placeholder">Résumé en cours...</p>'
+    return
+  }
 
   if (!text) {
     container.innerHTML = '<p class="placeholder">Aucun résumé disponible</p>'
     return
   }
 
-  container.innerHTML = `<p>${text}</p>`
+  const formatted = text
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*\*(.+?):\*\*/g, "<strong>$1:</strong><br>")
+    .replace(/(\d+)\./g, "<br>$1.")
+    .replace(/^<br>/, "")
+
+  container.innerHTML = formatted
 }
 
-function clearAudioSection() {
-  document.getElementById("audio-status").textContent = ""
-  document.getElementById("audio-status").className = "audio-status"
-  audioPlayer.src = ""
-  document.getElementById("transcription-text").innerHTML = '<p class="placeholder">Aucune transcription disponible</p>'
-  document.getElementById("resume-text").innerHTML = '<p class="placeholder">Aucun résumé disponible</p>'
+function displayRecordingsList(recordings) {
+  const list = document.getElementById("recordings-list")
+  list.classList.remove("hidden")
+
+  list.innerHTML =
+    "<h4>Autres enregistrements</h4>" +
+    recordings
+      .map(
+        (rec, i) => `
+      <div class="recording-item ${i === 0 ? "active" : ""}" data-id="${rec.id}">
+        <div class="recording-icon">🎙️</div>
+        <div class="recording-info">
+          <div class="recording-date">${formatDate(rec.created_at)}</div>
+          <div class="recording-status">${getStatusLabel(rec.status)}</div>
+        </div>
+      </div>
+    `,
+      )
+      .join("")
+
+  list.querySelectorAll(".recording-item").forEach((item) => {
+    item.addEventListener("click", () => {
+      const rec = recordings.find((r) => r.id == item.dataset.id)
+      if (rec) {
+        list.querySelectorAll(".recording-item").forEach((i) => i.classList.remove("active"))
+        item.classList.add("active")
+        loadRecording(rec)
+      }
+    })
+  })
+}
+
+function clearModal() {
+  document.getElementById("progress-section").classList.add("hidden")
+  document.getElementById("audio-section").classList.add("hidden")
+  document.getElementById("search-bar").classList.add("hidden")
+  document.getElementById("recordings-list").classList.add("hidden")
+  document.getElementById("transcription-text").innerHTML = '<p class="placeholder">Aucun enregistrement</p>'
+  document.getElementById("resume-text").innerHTML = '<p class="placeholder">Aucun enregistrement</p>'
+}
+
+function closeModal() {
+  document.getElementById("modal").classList.remove("active")
+  document.body.style.overflow = ""
+  if (audioPlayer) audioPlayer.pause()
+  clearSearch()
+}
+
+// =====================================================
+// SEARCH
+// =====================================================
+
+function setupSearch() {
+  const input = document.getElementById("search-input")
+  const clear = document.getElementById("search-clear")
+
+  input.addEventListener("input", (e) => {
+    const query = e.target.value.toLowerCase()
+    searchInTranscription(query)
+  })
+
+  clear.addEventListener("click", clearSearch)
+}
+
+function searchInTranscription(query) {
+  const words = document.querySelectorAll("#transcription-text .word")
+
+  words.forEach((word) => {
+    word.classList.remove("highlight")
+    if (query && word.textContent.toLowerCase().includes(query)) {
+      word.classList.add("highlight")
+    }
+  })
+}
+
+function clearSearch() {
+  document.getElementById("search-input").value = ""
+  document.querySelectorAll(".word").forEach((w) => w.classList.remove("highlight"))
+}
+
+// =====================================================
+// ORPHAN RECORDINGS
+// =====================================================
+
+function displayOrphanRecordings() {
+  const grid = document.getElementById("orphan-grid")
+
+  if (orphanRecordings.length === 0) {
+    grid.innerHTML = '<p class="placeholder">Aucun enregistrement</p>'
+    return
+  }
+
+  grid.innerHTML = orphanRecordings
+    .map(
+      (rec) => `
+    <div class="orphan-card status-${rec.status}" data-id="${rec.id}">
+      <div class="orphan-header">
+        <div class="orphan-title">🎙️ Enregistrement #${rec.id}</div>
+        <div class="orphan-status ${rec.status}">${getStatusLabel(rec.status)}</div>
+      </div>
+      <div class="orphan-date">${formatDate(rec.created_at)}</div>
+      <div class="orphan-preview">${rec.transcription_text || "En traitement..."}</div>
+    </div>
+  `,
+    )
+    .join("")
+
+  grid.querySelectorAll(".orphan-card").forEach((card) => {
+    card.addEventListener("click", () => {
+      const rec = orphanRecordings.find((r) => r.id == card.dataset.id)
+      if (rec) openOrphanModal(rec)
+    })
+  })
+}
+
+function openOrphanModal(recording) {
+  // Reuse course modal for orphans
+  const modal = document.getElementById("modal")
+
+  document.getElementById("modal-title").textContent = `Enregistrement #${recording.id}`
+  document.getElementById("modal-time").textContent = ""
+  document.getElementById("modal-prof").textContent = formatDate(recording.created_at)
+  document.getElementById("modal-salle").textContent = ""
+
+  loadRecording(recording)
+  document.getElementById("recordings-list").classList.add("hidden")
+
+  modal.classList.add("active")
+  document.body.style.overflow = "hidden"
 }
 
 // =====================================================
@@ -535,112 +693,65 @@ function clearAudioSection() {
 // =====================================================
 
 function setupEventListeners() {
-  // Toggle semaine A/B
-  document.getElementById("btn-semaine-a").addEventListener("click", () => {
-    currentWeek = "semaine_A"
-    updateWeekButtons()
-    generateTimetable()
+  // Week navigation
+  document.getElementById("prev-week").addEventListener("click", () => {
+    currentWeekOffset--
+    updateDisplay()
   })
 
-  document.getElementById("btn-semaine-b").addEventListener("click", () => {
-    currentWeek = "semaine_B"
-    updateWeekButtons()
-    generateTimetable()
+  document.getElementById("next-week").addEventListener("click", () => {
+    currentWeekOffset++
+    updateDisplay()
   })
 
-  // Fermer le modal cours
+  // Day navigation
+  document.querySelectorAll(".day-btn").forEach((btn, i) => {
+    btn.addEventListener("click", () => {
+      currentDayIndex = i
+      document.querySelectorAll(".day-btn").forEach((b) => b.classList.remove("active"))
+      btn.classList.add("active")
+
+      document.querySelectorAll(".day-card").forEach((card, j) => {
+        card.classList.toggle("active", j === i)
+      })
+    })
+  })
+
+  // Modal close
   document.getElementById("modal-close").addEventListener("click", closeModal)
   document.getElementById("modal").addEventListener("click", (e) => {
     if (e.target.id === "modal") closeModal()
   })
 
-  document.getElementById("orphan-modal-close").addEventListener("click", closeOrphanModal)
-  document.getElementById("orphan-modal").addEventListener("click", (e) => {
-    if (e.target.id === "orphan-modal") closeOrphanModal()
-  })
-
-  // Tabs modal cours
-  document.querySelectorAll("#modal .tab-btn").forEach((btn) => {
+  // Tabs
+  document.querySelectorAll(".tab-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
-      const tabId = btn.dataset.tab
-
-      document.querySelectorAll("#modal .tab-btn").forEach((b) => b.classList.remove("active"))
-      document.querySelectorAll("#modal .tab-pane").forEach((p) => p.classList.remove("active"))
-
+      const tab = btn.dataset.tab
+      document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"))
+      document.querySelectorAll(".tab-pane").forEach((p) => p.classList.remove("active"))
       btn.classList.add("active")
-      document.getElementById(`tab-${tabId}`).classList.add("active")
+      document.getElementById(`tab-${tab}`).classList.add("active")
     })
   })
 
-  document.querySelectorAll("#orphan-modal .tab-btn").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const tabId = btn.dataset.tab
+  setupSearch()
 
-      document.querySelectorAll("#orphan-modal .tab-btn").forEach((b) => b.classList.remove("active"))
-      document.querySelectorAll("#orphan-modal .tab-pane").forEach((p) => p.classList.remove("active"))
-
-      btn.classList.add("active")
-      document.getElementById(`tab-${tabId}`).classList.add("active")
-    })
-  })
-
-  // Filtres emploi du temps
-  document.getElementById("filter-matiere").addEventListener("change", applyFilters)
-  document.getElementById("filter-status").addEventListener("change", applyFilters)
-
-  document.getElementById("orphan-filter-status").addEventListener("change", displayOrphanRecordings)
-
-  // Mise à jour du mot actif pendant la lecture
+  // Audio timeupdate for active word
   if (audioPlayer) {
     audioPlayer.addEventListener("timeupdate", updateActiveWord)
-  }
-
-  if (orphanAudioPlayer) {
-    orphanAudioPlayer.addEventListener("timeupdate", updateOrphanActiveWord)
-  }
-}
-
-function updateWeekButtons() {
-  document.getElementById("btn-semaine-a").classList.toggle("active", currentWeek === "semaine_A")
-  document.getElementById("btn-semaine-b").classList.toggle("active", currentWeek === "semaine_B")
-}
-
-function closeModal() {
-  document.getElementById("modal").classList.remove("active")
-  if (audioPlayer) {
-    audioPlayer.pause()
   }
 }
 
 function updateActiveWord() {
-  if (!audioPlayer || !currentRecording?.timestamps) return
+  if (!audioPlayer || !currentRecording?.transcription_segments) return
 
   const currentTime = audioPlayer.currentTime
   const words = document.querySelectorAll("#transcription-text .word")
 
   words.forEach((word) => {
     const start = Number.parseFloat(word.dataset.start)
-    const nextWord = word.nextElementSibling
-    const end = nextWord ? Number.parseFloat(nextWord.dataset.start) : start + 1
-
-    if (currentTime >= start && currentTime < end) {
-      words.forEach((w) => w.classList.remove("active"))
-      word.classList.add("active")
-      word.scrollIntoView({ behavior: "smooth", block: "center" })
-    }
-  })
-}
-
-// Mettre à jour le mot actif pour les orphelins
-function updateOrphanActiveWord() {
-  if (!orphanAudioPlayer || !currentOrphanRecording?.timestamps) return
-
-  const currentTime = orphanAudioPlayer.currentTime
-  const words = document.querySelectorAll("#orphan-transcription-text .word")
-
-  words.forEach((word, i) => {
-    const start = Number.parseFloat(word.dataset.start)
-    const end = currentOrphanRecording.timestamps[i + 1]?.start || start + 1
+    const next = word.nextElementSibling
+    const end = next && next.classList.contains("word") ? Number.parseFloat(next.dataset.start) : start + 1
 
     if (currentTime >= start && currentTime < end) {
       words.forEach((w) => w.classList.remove("active"))
@@ -651,77 +762,43 @@ function updateOrphanActiveWord() {
 }
 
 // =====================================================
-// FILTRES
-// =====================================================
-
-function populateMatiereFilter() {
-  const select = document.getElementById("filter-matiere")
-  const matieres = new Set()
-
-  // Collecter toutes les matières
-  Object.values(TIMETABLE_DATA).forEach((week) => {
-    Object.values(week).forEach((day) => {
-      day.forEach((course) => matieres.add(course.cours))
-    })
-  })
-
-  // Ajouter les options
-  Array.from(matieres)
-    .sort()
-    .forEach((matiere) => {
-      const option = document.createElement("option")
-      option.value = matiere
-      option.textContent = matiere
-      select.appendChild(option)
-    })
-}
-
-function applyFilters() {
-  const matiereFilter = document.getElementById("filter-matiere").value
-  const statusFilter = document.getElementById("filter-status").value
-
-  const cards = document.querySelectorAll(".course-card")
-
-  cards.forEach((card) => {
-    const courseName = card.querySelector(".course-name").textContent
-    const hasStatusClass = statusFilter ? card.classList.contains(`status-${statusFilter}`) : true
-    const matchesMatiere = matiereFilter ? courseName === matiereFilter : true
-
-    if (matchesMatiere && hasStatusClass) {
-      card.style.opacity = "1"
-      card.style.pointerEvents = "auto"
-    } else {
-      card.style.opacity = "0.3"
-      card.style.pointerEvents = "none"
-    }
-  })
-}
-
-// =====================================================
-// UTILITAIRES
+// UTILITIES
 // =====================================================
 
 function getStatusLabel(status) {
   const labels = {
-    waiting: "En attente...",
     detected: "Détecté",
-    transcribing: "Transcription en cours...",
-    summarizing: "Résumé en cours...",
+    transcribing: "Transcription...",
+    summarizing: "Résumé...",
     done: "Terminé",
     error: "Erreur",
   }
-  return labels[status] || status || "Inconnu"
+  return labels[status] || status
+}
+
+function getProgressPercentage(status) {
+  const progress = {
+    detected: 25,
+    transcribing: 50,
+    summarizing: 75,
+    done: 100,
+    error: 0,
+  }
+  return progress[status] || 0
 }
 
 function formatDate(dateString) {
   if (!dateString) return "Date inconnue"
-
   const date = new Date(dateString)
   return date.toLocaleDateString("fr-FR", {
     day: "numeric",
-    month: "long",
-    year: "numeric",
+    month: "short",
     hour: "2-digit",
     minute: "2-digit",
   })
 }
+
+// Cleanup on page unload
+window.addEventListener("beforeunload", () => {
+  if (refreshInterval) clearInterval(refreshInterval)
+})

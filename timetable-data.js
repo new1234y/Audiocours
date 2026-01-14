@@ -37,7 +37,6 @@ const TIMETABLE_DATA = {
       { debut: "13:30", fin: "15:00", cours: "PHYSIQUE-CHIMIE", prof: "HANSE B.", salle: "Labo" },
       { debut: "15:40", fin: "16:40", cours: "SCIENCES VIE ET TERRE", prof: "GALAN J.", salle: "Labo SVT" },
       { debut: "16:40", fin: "17:40", cours: "FRANCAIS", prof: "BESSON A.", salle: "D006" },
-
     ],
   },
   semaine_B: {
@@ -95,3 +94,6 @@ const TIME_SLOTS = [
 // Jours de la semaine
 const DAYS = ["lundi", "mardi", "mercredi", "jeudi", "vendredi"]
 const DAYS_DISPLAY = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi"]
+
+const WEEK_A_START = new Date("2025-01-12") // Reference Monday for week A
+
