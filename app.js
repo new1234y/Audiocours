@@ -1,1106 +1,727 @@
-// ============== UTILITY FUNCTIONS ==============
-async function fetchJson(url) {
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`${url} -> ${res.status}`)
-  return res.json()
+// =====================================================
+// APPLICATION PRINCIPALE
+// =====================================================
+
+// État de l'application
+let currentWeek = "semaine_A"
+let audioRecordings = []
+let orphanRecordings = []
+let audioPlayer = null
+let orphanAudioPlayer = null
+let currentRecording = null
+let currentOrphanRecording = null
+
+function isSupabaseConfigured() {
+  return SUPABASE_CONFIG.url && SUPABASE_CONFIG.apiKey
 }
 
-function getEl(id) {
-  const e = document.getElementById(id)
-  if (!e) console.warn(`DOM element #${id} not found`)
-  return e
-}
+// =====================================================
+// INITIALISATION
+// =====================================================
 
-function isoWeekNumber(dt) {
-  const date = new Date(Date.UTC(dt.getFullYear(), dt.getMonth(), dt.getDate()))
-  const dayNum = date.getUTCDay() || 7
-  date.setUTCDate(date.getUTCDate() + 4 - dayNum)
-  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1))
-  const weekNo = Math.ceil(((date - yearStart) / 86400000 + 1) / 7)
-  return weekNo
-}
+document.addEventListener("DOMContentLoaded", async () => {
+  // Initialiser les lecteurs audio
+  audioPlayer = document.getElementById("audio-player")
+  orphanAudioPlayer = document.getElementById("orphan-audio-player")
 
-function weekKeyFromDate(isoDateStr) {
-  const d = new Date(isoDateStr)
-  if (isNaN(d)) return null
-  const wk = isoWeekNumber(d)
-  return wk % 2 === 1 ? "semaine_A" : "semaine_B"
-}
-
-function timeToMinutes(timeStr) {
-  const [h, m] = timeStr.split(":").map(Number)
-  return h * 60 + m
-}
-
-function extractQuotedTitle(raw) {
-  if (!raw) return null
-  const m = raw.match(/"([^"]{3,80})"/)
-  if (m) return m[1]
-  return null
-}
-
-// Toast notification system
-function showToast(message, type = "info") {
-  const container = getEl("toastContainer")
-  if (!container) return
-
-  const toast = document.createElement("div")
-  toast.className = `toast ${type}`
-  toast.innerHTML = `
-    <span>${type === "success" ? "✓" : type === "error" ? "✕" : "ℹ"}</span>
-    <span>${message}</span>
-  `
-  container.appendChild(toast)
-
-  setTimeout(() => {
-    toast.style.opacity = "0"
-    toast.style.transform = "translateX(100%)"
-    setTimeout(() => toast.remove(), 300)
-  }, 3000)
-}
-
-// Time slot definitions
-const FIXED_TIME_SLOTS = [
-  { start: "08:10", end: "09:10", label: "8h10-9h10" },
-  { start: "09:10", end: "10:10", label: "9h10-10h10" },
-  { start: "10:20", end: "11:20", label: "10h20-11h20" },
-  { start: "11:20", end: "12:20", label: "11h20-12h20" },
-  { start: "12:30", end: "13:30", label: "12h30-13h30" },
-  { start: "13:30", end: "14:30", label: "13h30-14h30" },
-  { start: "14:30", end: "15:30", label: "14h30-15h30" },
-  { start: "15:40", end: "16:40", label: "15h40-16h40" },
-  { start: "16:40", end: "17:40", label: "16h40-17h40" },
-]
-
-function findSlotIndex(debut) {
-  const debutMinutes = timeToMinutes(debut)
-  for (let i = 0; i < FIXED_TIME_SLOTS.length; i++) {
-    const slotStartMinutes = timeToMinutes(FIXED_TIME_SLOTS[i].start)
-    if (Math.abs(debutMinutes - slotStartMinutes) <= 15) {
-      return i
+  // Initialiser Supabase si configuré
+  if (isSupabaseConfigured()) {
+    try {
+      supabase = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.apiKey)
+      await loadAudioRecordings()
+    } catch (error) {
+      console.error("Erreur connexion Supabase:", error)
     }
-  }
-  return -1
-}
-
-function findSlotIndexByTime(timeStr) {
-  const minutes = timeToMinutes(timeStr)
-  for (let i = FIXED_TIME_SLOTS.length - 1; i >= 0; i--) {
-    const slotStart = timeToMinutes(FIXED_TIME_SLOTS[i].start)
-    const slotEnd = timeToMinutes(FIXED_TIME_SLOTS[i].end)
-    if (minutes >= slotStart && minutes < slotEnd) {
-      return i
-    }
-  }
-  if (minutes < timeToMinutes(FIXED_TIME_SLOTS[0].start)) {
-    return 0
-  }
-  return FIXED_TIME_SLOTS.length - 1
-}
-
-function getTimeFromIsoDate(isoDateStr) {
-  const d = new Date(isoDateStr)
-  if (isNaN(d)) return null
-  const h = d.getHours().toString().padStart(2, "0")
-  const m = d.getMinutes().toString().padStart(2, "0")
-  return `${h}:${m}`
-}
-
-function getSlotSpan(lesson) {
-  const startIdx = findSlotIndex(lesson.debut)
-  if (startIdx === -1) return 1
-
-  const endMinutes = timeToMinutes(lesson.fin)
-  let span = 1
-
-  for (let i = startIdx + 1; i < FIXED_TIME_SLOTS.length; i++) {
-    const nextSlotStart = timeToMinutes(FIXED_TIME_SLOTS[i].start)
-    if (endMinutes > nextSlotStart + 10) {
-      span++
-    } else {
-      break
-    }
-  }
-
-  return span
-}
-
-// ============== STATS FUNCTIONS ==============
-function updateStats() {
-  const registry = window._registry || []
-  const timetable = window._timetable || {}
-  const weekKey = weekKeyFromDate(window.currentIsoWeek || new Date().toISOString())
-  const week = timetable[weekKey] || {}
-
-  let totalCourses = 0
-  let totalMinutes = 0
-
-  Object.values(week).forEach((dayLessons) => {
-    if (Array.isArray(dayLessons)) {
-      totalCourses += dayLessons.length
-      dayLessons.forEach((lesson) => {
-        const start = timeToMinutes(lesson.debut)
-        const end = timeToMinutes(lesson.fin)
-        totalMinutes += end - start
-      })
-    }
-  })
-
-  const statCourses = getEl("statCourses")
-  const statRecordings = getEl("statRecordings")
-  const statHours = getEl("statHours")
-
-  if (statCourses) statCourses.textContent = totalCourses
-  if (statRecordings) statRecordings.textContent = registry.length
-  if (statHours) statHours.textContent = `${Math.round(totalMinutes / 60)}h`
-}
-
-// ============== RENDER TIMETABLE ==============
-function renderTimetable(timetable, weekKey) {
-  const gridWrap = getEl("gridWrap")
-  if (!gridWrap) return
-
-  gridWrap.innerHTML = ""
-
-  const days = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
-  const dayNames = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"]
-
-  let refDate = new Date()
-  if (window.currentIsoWeek) refDate = new Date(window.currentIsoWeek)
-  const dayOfWeek = refDate.getDay()
-  const monday = new Date(refDate)
-  monday.setDate(refDate.getDate() - ((dayOfWeek + 6) % 7))
-
-  // Update week dates display
-  const weekDates = getEl("weekDates")
-  if (weekDates) {
-    const sunday = new Date(monday)
-    sunday.setDate(monday.getDate() + 6)
-    weekDates.textContent = `${monday.getDate()}/${monday.getMonth() + 1} - ${sunday.getDate()}/${sunday.getMonth() + 1}`
-  }
-
-  const week = timetable[weekKey] || {}
-  const registry = window._registry || []
-  const today = new Date()
-
-  const wrapper = document.createElement("div")
-  wrapper.className = "grid-wrapper"
-
-  const timesCol = document.createElement("div")
-  timesCol.className = "times-column"
-
-  const timeHeader = document.createElement("div")
-  timeHeader.className = "time-header"
-  timeHeader.textContent = "Heure"
-  timesCol.appendChild(timeHeader)
-
-  const timeSlotsContainer = document.createElement("div")
-  timeSlotsContainer.className = "slots-container"
-
-  FIXED_TIME_SLOTS.forEach((slot) => {
-    const timeLabel = document.createElement("div")
-    timeLabel.className = "time-slot-label"
-    timeLabel.textContent = slot.label
-    timeSlotsContainer.appendChild(timeLabel)
-  })
-
-  timesCol.appendChild(timeSlotsContainer)
-
-  const othersTimeLabel = document.createElement("div")
-  othersTimeLabel.className = "time-slot-label others-time-label"
-  othersTimeLabel.textContent = "Autres"
-  timesCol.appendChild(othersTimeLabel)
-
-  wrapper.appendChild(timesCol)
-
-  days.forEach((day, dayIdx) => {
-    const date = new Date(monday)
-    date.setDate(monday.getDate() + dayIdx)
-
-    const dayCol = document.createElement("div")
-    dayCol.className = "day-column"
-    dayCol.dataset.dayIndex = dayIdx
-
-    const isToday = date.toDateString() === today.toDateString()
-
-    const dayHeader = document.createElement("div")
-    dayHeader.className = `day-name${isToday ? " today" : ""}`
-    dayHeader.innerHTML = `${dayNames[dayIdx]}<span class="date">${date.getDate()}/${date.getMonth() + 1}</span>`
-    dayCol.appendChild(dayHeader)
-
-    const dayLessons = week[day] || []
-    const isWeekend = dayIdx === 5 || dayIdx === 6
-
-    const slotsContainer = document.createElement("div")
-    slotsContainer.className = "slots-container"
-
-    const dayDate = new Date(monday)
-    dayDate.setDate(monday.getDate() + dayIdx)
-
-    const dayRecordings = registry.filter((e) => {
-      const eDate = new Date(e.created_at || e.updated_at || e.date || 0)
-      if (!eDate.getFullYear()) return false
-      return eDate.getDate() === dayDate.getDate() && eDate.getMonth() === dayDate.getMonth()
-    })
-
-    const recordingsBySlot = {}
-    if (isWeekend) {
-      dayRecordings.forEach((rec) => {
-        const time = getTimeFromIsoDate(rec.created_at || rec.updated_at || rec.date)
-        if (time) {
-          const slotIdx = findSlotIndexByTime(time)
-          if (!recordingsBySlot[slotIdx]) {
-            recordingsBySlot[slotIdx] = []
-          }
-          recordingsBySlot[slotIdx].push(rec)
-        }
-      })
-    }
-
-    const occupiedSlots = new Set()
-
-    FIXED_TIME_SLOTS.forEach((slot, slotIdx) => {
-      const timeCell = document.createElement("div")
-      timeCell.className = "time-cell"
-
-      if (occupiedSlots.has(slotIdx)) {
-        timeCell.style.display = "none"
-        slotsContainer.appendChild(timeCell)
-        return
-      }
-
-      if (isWeekend) {
-        const slotRecordings = recordingsBySlot[slotIdx] || []
-
-        if (slotRecordings.length > 0) {
-          const recordingsWrapper = document.createElement("div")
-          recordingsWrapper.className = "weekend-recordings"
-
-          slotRecordings.forEach((rec) => {
-            const recCard = document.createElement("div")
-            recCard.className = "recording-card"
-            const recTime = getTimeFromIsoDate(rec.created_at || rec.updated_at || rec.date)
-            recCard.innerHTML = `
-              <div class="rec-header">
-                <span class="rec-icon">🎙</span>
-                <span class="rec-time">${recTime || ""}</span>
-              </div>
-              <div class="rec-name">${rec.audio_source || rec.id || "Enregistrement"}</div>
-            `
-            recCard.addEventListener("click", (e) => {
-              e.stopPropagation()
-              openPanelForEntry(rec)
-            })
-            recordingsWrapper.appendChild(recCard)
-          })
-
-          timeCell.appendChild(recordingsWrapper)
-        } else {
-          const emptyDiv = document.createElement("div")
-          emptyDiv.className = "empty-cell weekend-empty"
-          emptyDiv.textContent = "—"
-          timeCell.appendChild(emptyDiv)
-        }
-      } else {
-        const lesson = dayLessons.find((l) => findSlotIndex(l.debut) === slotIdx)
-
-        if (lesson) {
-          const span = getSlotSpan(lesson)
-
-          for (let i = 1; i < span; i++) {
-            occupiedSlots.add(slotIdx + i)
-          }
-
-          // Check if there's a recording for this course
-          const hasRecording = registry.some((e) =>
-            (e.resume_text || e.transcription_text || "").toLowerCase().includes(lesson.cours.toLowerCase()),
-          )
-
-          const card = document.createElement("div")
-          card.className = `course-card${hasRecording ? " has-recording" : ""}`
-
-          if (span > 1) {
-            card.style.flex = span
-            card.classList.add("multi-slot")
-            timeCell.style.flex = span
-          }
-
-          if (span >= 2) {
-            card.style.background = "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)"
-          }
-
-          card.innerHTML = `
-            <div class="course-title">${lesson.cours}</div>
-            <div class="course-meta">
-              <span class="teacher">${lesson.prof}</span>
-              <span class="room">${lesson.salle}</span>
-            </div>
-            <div class="course-time">${lesson.debut} - ${lesson.fin}</div>
-          `
-          card.dataset.info = JSON.stringify(lesson)
-          card.addEventListener("click", (e) => {
-            e.stopPropagation()
-            openSlotFromTimetable(lesson)
-          })
-          timeCell.appendChild(card)
-        } else {
-          const emptyDiv = document.createElement("div")
-          emptyDiv.className = "empty-cell"
-          emptyDiv.textContent = "—"
-          timeCell.appendChild(emptyDiv)
-        }
-      }
-
-      slotsContainer.appendChild(timeCell)
-    })
-
-    dayCol.appendChild(slotsContainer)
-
-    const othersContainer = document.createElement("div")
-    othersContainer.className = "others-container"
-
-    if (!isWeekend) {
-      const unmatchedRecordings = dayRecordings.filter((e) => {
-        const matchesCourse = dayLessons.some((ls) =>
-          (e.transcription_text || e.resume_text || "").toLowerCase().includes(ls.cours.toLowerCase()),
-        )
-        return !matchesCourse
-      })
-
-      if (unmatchedRecordings.length > 0) {
-        unmatchedRecordings.forEach((rec) => {
-          const item = document.createElement("div")
-          item.className = "recording-item"
-          item.innerHTML = `
-            <span class="rec-icon">🎙</span>
-            <span class="rec-name">${rec.audio_source || rec.id || "Enreg."}</span>
-          `
-          item.addEventListener("click", (e) => {
-            e.stopPropagation()
-            openPanelForEntry(rec)
-          })
-          othersContainer.appendChild(item)
-        })
-      } else {
-        const empty = document.createElement("div")
-        empty.className = "empty-others"
-        empty.textContent = "—"
-        othersContainer.appendChild(empty)
-      }
-    } else {
-      const empty = document.createElement("div")
-      empty.className = "empty-others weekend-others"
-      empty.textContent = "Weekend"
-      othersContainer.appendChild(empty)
-    }
-
-    dayCol.appendChild(othersContainer)
-    wrapper.appendChild(dayCol)
-  })
-
-  gridWrap.appendChild(wrapper)
-
-  setupDaySelector()
-
-  if (window.currentMobileDay === undefined) {
-    // Set to today if it's in this week, otherwise Monday
-    const todayIdx = today.getDay() === 0 ? 6 : today.getDay() - 1
-    window.currentMobileDay = todayIdx
-  }
-  updateMobileDayView()
-  updateStats()
-}
-
-// ============== DAY SELECTOR ==============
-function setupDaySelector() {
-  const selector = getEl("daySelector")
-  if (!selector) return
-
-  const days = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"]
-  const today = new Date()
-  const todayIdx = today.getDay() === 0 ? 6 : today.getDay() - 1
-
-  selector.innerHTML = ""
-  selector.classList.remove("hidden")
-
-  days.forEach((day, idx) => {
-    const btn = document.createElement("button")
-    btn.textContent = day
-    btn.dataset.dayIndex = idx
-    btn.className = "btn"
-    if (idx === todayIdx) {
-      btn.classList.add("today")
-    }
-    btn.addEventListener("click", () => {
-      window.currentMobileDay = idx
-      updateMobileDayView()
-    })
-    selector.appendChild(btn)
-  })
-}
-
-function updateMobileDayView() {
-  if (window.innerWidth > 900) return
-
-  const dayIdx = window.currentMobileDay || 0
-
-  const selector = getEl("daySelector")
-  if (selector) {
-    const buttons = selector.querySelectorAll("button")
-    buttons.forEach((btn, idx) => {
-      if (idx === dayIdx) {
-        btn.classList.add("active")
-      } else {
-        btn.classList.remove("active")
-      }
-    })
-  }
-
-  const dayColumns = document.querySelectorAll(".day-column")
-  dayColumns.forEach((col, idx) => {
-    if (idx === dayIdx) {
-      col.style.display = "flex"
-      col.classList.add("active-day")
-    } else {
-      col.style.display = "none"
-      col.classList.remove("active-day")
-    }
-  })
-}
-
-// ============== ENTRY PANEL ==============
-function openSlotFromTimetable(ls) {
-  const registry = window._registry || []
-  const match = registry.find((e) =>
-    (e.resume_text || e.transcription_text || "").toLowerCase().includes(ls.cours.toLowerCase()),
-  )
-  if (match) {
-    openPanelForEntry(match)
   } else {
-    openPanelForEntry({
-      audio_source: ls.cours,
-      created_at: new Date().toISOString(),
-      transcription_text: "",
-      resume_text:
-        "Aucun enregistrement trouvé pour ce cours.\n\nProfesseur: " +
-        ls.prof +
-        "\nSalle: " +
-        ls.salle +
-        "\nHoraire: " +
-        ls.debut +
-        " - " +
-        ls.fin,
+    loadDemoOrphanRecordings()
+  }
+
+  // Générer l'emploi du temps
+  generateTimetable()
+  populateMatiereFilter()
+  displayOrphanRecordings()
+
+  // Event listeners
+  setupEventListeners()
+
+  // Masquer le loader
+  document.getElementById("loader").classList.add("hidden")
+})
+
+// =====================================================
+// GESTION DE L'EMPLOI DU TEMPS
+// =====================================================
+
+function generateTimetable() {
+  const timetableEl = document.getElementById("timetable")
+  const weekData = TIMETABLE_DATA[currentWeek]
+
+  // Vider le contenu
+  timetableEl.innerHTML = ""
+
+  // Créer l'en-tête
+  timetableEl.innerHTML = `
+        <div class="timetable-header">Heures</div>
+        ${DAYS_DISPLAY.map((day) => `<div class="timetable-header">${day}</div>`).join("")}
+    `
+
+  // Créer les lignes pour chaque créneau horaire
+  TIME_SLOTS.forEach((slot, rowIndex) => {
+    // Cellule des heures
+    const timeCell = document.createElement("div")
+    timeCell.className = "time-slot"
+    timeCell.innerHTML = `${slot.debut}<br>${slot.fin}`
+    timetableEl.appendChild(timeCell)
+
+    // Cellules pour chaque jour
+    DAYS.forEach((day) => {
+      const cell = document.createElement("div")
+      cell.className = "course-cell"
+      cell.dataset.day = day
+      cell.dataset.slot = rowIndex
+
+      // Trouver les cours qui commencent à ce créneau
+      const dayCourses = weekData[day] || []
+      const course = dayCourses.find((c) => c.debut === slot.debut)
+
+      if (course) {
+        const card = createCourseCard(course, day, rowIndex)
+        cell.appendChild(card)
+      }
+
+      timetableEl.appendChild(cell)
     })
+  })
+}
+
+function createCourseCard(course, day, slotIndex) {
+  const card = document.createElement("div")
+  card.className = "course-card"
+
+  // Calculer la hauteur en fonction de la durée
+  const duration = calculateDuration(course.debut, course.fin)
+  const height = (duration / 60) * 60 - 4 // 60px par heure, moins les marges
+
+  // Calculer la position top
+  const slotStart = TIME_SLOTS[slotIndex]
+  const offset = calculateDuration(slotStart.debut, course.debut)
+  const top = (offset / 60) * 60
+
+  card.style.top = `${top + 2}px`
+  card.style.height = `${height}px`
+
+  // Vérifier s'il y a des enregistrements pour ce cours
+  const recordings = getRecordingsForCourse(course.cours, day)
+  const status = recordings.length > 0 ? recordings[0].status : null
+
+  if (status) {
+    card.classList.add(`status-${status}`)
+  }
+
+  card.innerHTML = `
+        <div class="course-name">${course.cours}</div>
+        <div class="course-info">${course.salle}</div>
+        ${recordings.length > 0 ? '<div class="course-indicator has-audio"></div>' : ""}
+    `
+
+  // Event click
+  card.addEventListener("click", () => openCourseModal(course, day, recordings))
+
+  return card
+}
+
+function calculateDuration(start, end) {
+  const [startH, startM] = start.split(":").map(Number)
+  const [endH, endM] = end.split(":").map(Number)
+  return endH * 60 + endM - (startH * 60 + startM)
+}
+
+// =====================================================
+// GESTION DES ENREGISTREMENTS SUPABASE
+// =====================================================
+
+async function loadAudioRecordings() {
+  if (!supabase) return
+
+  try {
+    const { data, error } = await supabase
+      .from(SUPABASE_CONFIG.tableName)
+      .select("*")
+      .order("created_at", { ascending: false })
+
+    if (error) throw error
+
+    const allRecordings = data || []
+    audioRecordings = allRecordings.filter((rec) => rec.course_name || (rec.metadata && rec.metadata.course))
+    orphanRecordings = allRecordings.filter((rec) => !rec.course_name && !(rec.metadata && rec.metadata.course))
+
+    // Rafraîchir l'affichage
+    generateTimetable()
+    displayOrphanRecordings()
+  } catch (error) {
+    console.error("Erreur chargement enregistrements:", error)
   }
 }
 
-function openPanelForEntry(entry) {
-  const isMobile = window.innerWidth <= 900
+function loadDemoOrphanRecordings() {
+  orphanRecordings = [
+    {
+      id: 1,
+      audio_source: "demo_audio_1.mp3",
+      transcription_text:
+        "Ceci est un exemple de transcription pour un enregistrement qui n'est pas associé à un cours particulier. Il peut s'agir d'une réunion, d'une conférence ou d'un autre type d'événement audio que vous avez enregistré.",
+      resume_text:
+        "Résumé de l'enregistrement: discussion générale sur divers sujets académiques et organisation personnelle.",
+      status: "done",
+      created_at: "2025-01-10T14:30:00",
+      timestamps: [
+        { word: "Ceci", start: 0.0 },
+        { word: "est", start: 0.3 },
+        { word: "un", start: 0.5 },
+        { word: "exemple", start: 0.7 },
+        { word: "de", start: 1.1 },
+        { word: "transcription", start: 1.3 },
+      ],
+    },
+    {
+      id: 2,
+      audio_source: "demo_audio_2.mp3",
+      transcription_text: "Deuxième enregistrement de démonstration avec une transcription plus courte.",
+      resume_text: "Notes rapides prises lors d'une session d'étude.",
+      status: "transcribing",
+      created_at: "2025-01-12T09:15:00",
+      timestamps: [],
+    },
+    {
+      id: 3,
+      audio_source: "demo_audio_3.mp3",
+      transcription_text: null,
+      resume_text: null,
+      status: "detected",
+      created_at: "2025-01-14T16:45:00",
+      timestamps: [],
+    },
+    {
+      id: 4,
+      audio_source: "demo_audio_4.mp3",
+      transcription_text:
+        "Enregistrement d'une conférence externe sur les nouvelles technologies éducatives et leur impact sur l'apprentissage moderne. Les intervenants ont discuté de l'importance de l'intelligence artificielle dans l'éducation.",
+      resume_text:
+        "Conférence sur les technologies éducatives: IA, apprentissage adaptatif, et outils numériques pour l'enseignement.",
+      status: "done",
+      created_at: "2025-01-08T11:00:00",
+      timestamps: [
+        { word: "Enregistrement", start: 0.0 },
+        { word: "d'une", start: 0.8 },
+        { word: "conférence", start: 1.2 },
+        { word: "externe", start: 1.9 },
+      ],
+    },
+    {
+      id: 5,
+      audio_source: "demo_audio_5.mp3",
+      transcription_text: "Erreur lors du traitement de cet enregistrement.",
+      resume_text: null,
+      status: "error",
+      created_at: "2025-01-11T13:20:00",
+      timestamps: [],
+    },
+  ]
+}
 
-  function transformText(raw) {
-    if (!raw) return ""
-    let t = raw
-    t = t.replace(/\*\*(.+?)\*\*/g, (m, p1) => `<strong>${p1}</strong>`)
-    t = t.replace(/\*\*/g, "")
+function getRecordingsForCourse(courseName, day) {
+  // Filtrer les enregistrements par nom de cours
+  return audioRecordings.filter((rec) => {
+    return rec.course_name === courseName || (rec.metadata && rec.metadata.course === courseName)
+  })
+}
 
-    const lines = t.split(/\r?\n/)
-    const out = []
-    let inList = false
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim()
-      const m = line.match(/^\s*(\d+)\s*\.\s*(.*)$/)
-      if (m) {
-        if (!inList) {
-          out.push("<ol>")
-          inList = true
-        }
-        out.push(`<li>${m[2]}</li>`)
-      } else {
-        if (inList) {
-          out.push("</ol>")
-          inList = false
-        }
-        if (line === "") {
-          out.push("<p></p>")
-        } else if (line.startsWith("##")) {
-          out.push(`<h4>${line.replace(/^#+\s*/, "")}</h4>`)
-        } else {
-          out.push(`<p>${line}</p>`)
-        }
-      }
-    }
-    if (inList) out.push("</ol>")
-    return out.join("")
+async function getAudioUrl(audioSource) {
+  if (!supabase || !audioSource) return null
+
+  try {
+    const { data } = supabase.storage.from(SUPABASE_CONFIG.storageBucket).getPublicUrl(audioSource)
+
+    return data?.publicUrl
+  } catch (error) {
+    console.error("Erreur récupération URL audio:", error)
+    return null
+  }
+}
+
+// =====================================================
+// ENREGISTREMENTS ORPHELINS (SANS COURS)
+// =====================================================
+
+function displayOrphanRecordings() {
+  const grid = document.getElementById("orphan-recordings-grid")
+  const filterStatus = document.getElementById("orphan-filter-status")?.value || ""
+
+  let filteredRecordings = orphanRecordings
+  if (filterStatus) {
+    filteredRecordings = orphanRecordings.filter((rec) => rec.status === filterStatus)
   }
 
-  const speechRate = Number.parseFloat(localStorage.getItem("speechRate") || "1")
-
-  // Mobile full-page view
-  if (isMobile) {
-    const existing = document.querySelector(".entry-page")
-    if (existing) existing.remove()
-
-    const page = document.createElement("div")
-    page.className = "entry-page"
-
-    const header = document.createElement("div")
-    header.className = "entry-header"
-    const back = document.createElement("button")
-    back.className = "back-btn"
-    back.textContent = "← Retour"
-    back.addEventListener("click", () => {
-      if (window.speechSynthesis) window.speechSynthesis.cancel()
-      page.style.transform = "translateX(100%)"
-      setTimeout(() => page.remove(), 300)
-    })
-
-    const title = document.createElement("div")
-    title.className = "entry-title"
-    const raw = entry.resume_text || entry.transcription_text || ""
-    const quoted = extractQuotedTitle(raw)
-    title.textContent = quoted || entry.audio_source || entry.id
-    header.appendChild(back)
-    header.appendChild(title)
-    page.appendChild(header)
-
-    const meta = document.createElement("div")
-    meta.className = "entry-meta"
-    const d = new Date(entry.created_at || "")
-    meta.textContent = d.getFullYear()
-      ? d.toLocaleDateString("fr-FR", {
-          weekday: "long",
-          year: "numeric",
-          month: "long",
-          day: "numeric",
-          hour: "2-digit",
-          minute: "2-digit",
-        })
-      : ""
-    page.appendChild(meta)
-
-    const controls = document.createElement("div")
-    controls.className = "controls-row"
-
-    let isPlaying = false
-    const playBtn = document.createElement("button")
-    playBtn.className = "btn-small playBtn"
-    playBtn.innerHTML = "▶ Écouter"
-    playBtn.addEventListener("click", () => {
-      const text = entry.resume_text || entry.transcription_text || ""
-      if (!text) return
-      if ("speechSynthesis" in window) {
-        if (isPlaying) {
-          window.speechSynthesis.cancel()
-          playBtn.innerHTML = "▶ Écouter"
-          playBtn.classList.remove("playing")
-          isPlaying = false
-        } else {
-          const u = new SpeechSynthesisUtterance(text)
-          u.lang = "fr-FR"
-          u.rate = speechRate
-          u.onend = () => {
-            playBtn.innerHTML = "▶ Écouter"
-            playBtn.classList.remove("playing")
-            isPlaying = false
-          }
-          window.speechSynthesis.cancel()
-          window.speechSynthesis.speak(u)
-          playBtn.innerHTML = "⏹ Stop"
-          playBtn.classList.add("playing")
-          isPlaying = true
-        }
-      }
-    })
-
-    const copyBtn = document.createElement("button")
-    copyBtn.className = "btn-small copyBtn"
-    copyBtn.innerHTML = "📋 Copier"
-    copyBtn.addEventListener("click", () => {
-      const txt = entry.resume_text || entry.transcription_text || ""
-      navigator.clipboard.writeText(txt).then(() => {
-        showToast("Copié dans le presse-papier", "success")
-      })
-    })
-
-    const exportBtn = document.createElement("button")
-    exportBtn.className = "btn-small exportBtn"
-    exportBtn.innerHTML = "📥 Exporter"
-    exportBtn.addEventListener("click", () => {
-      const blob = new Blob([entry.transcription_text || entry.resume_text || ""], { type: "text/plain;charset=utf-8" })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement("a")
-      a.href = url
-      a.download = `${entry.audio_source || entry.id || "transcription"}.txt`
-      a.click()
-      URL.revokeObjectURL(url)
-      showToast("Fichier exporté", "success")
-    })
-
-    controls.appendChild(playBtn)
-    controls.appendChild(copyBtn)
-    controls.appendChild(exportBtn)
-    page.appendChild(controls)
-
-    const content = document.createElement("div")
-    content.className = "entry-content"
-    content.innerHTML = transformText(entry.resume_text || entry.transcription_text || "")
-    page.appendChild(content)
-
-    document.body.appendChild(page)
+  if (filteredRecordings.length === 0) {
+    grid.innerHTML = '<div class="orphan-empty"><p>Aucun enregistrement orphelin</p></div>'
     return
   }
 
-  // Desktop modal view
-  const modal = getEl("modal")
-  const content = getEl("modalBody")
-  if (!content) return
-  if (modal) modal.classList.remove("hidden")
-  content.innerHTML = ""
+  // Créer les cartes dynamiquement et ajouter directement les listeners
+  grid.innerHTML = ""
+  filteredRecordings.forEach((rec) => {
+    const cardHtml = createOrphanCard(rec)
+    const temp = document.createElement("div")
+    temp.innerHTML = cardHtml
+    const cardEl = temp.firstElementChild
 
-  const h = document.createElement("h3")
-  const quoted = extractQuotedTitle(entry.resume_text || entry.transcription_text || "")
-  h.textContent = quoted || entry.audio_source || entry.id
+    cardEl.addEventListener("click", () => openOrphanModal(rec))
+    grid.appendChild(cardEl)
+  })
+}
 
-  const date = document.createElement("div")
-  date.className = "meta"
-  const d = new Date(entry.created_at || "")
-  date.textContent = d.getFullYear()
-    ? d.toLocaleDateString("fr-FR", {
-        weekday: "long",
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
+function createOrphanCard(recording) {
+  const preview = recording.transcription_text
+    ? recording.transcription_text.substring(0, 150) + (recording.transcription_text.length > 150 ? "..." : "")
+    : "Aucune transcription disponible"
+
+  return `
+    <div class="orphan-card status-${recording.status}" data-id="${recording.id}">
+      <div class="orphan-card-header">
+        <div class="orphan-card-icon">🎙️</div>
+        <span class="orphan-card-status ${recording.status}">${getStatusLabel(recording.status)}</span>
+      </div>
+      <div class="orphan-card-title">Enregistrement #${recording.id}</div>
+      <div class="orphan-card-date">${formatDate(recording.created_at)}</div>
+      <div class="orphan-card-preview">${preview}</div>
+      <div class="orphan-card-footer">
+        <div class="orphan-card-meta">
+          <span>🎵</span>
+          <span>Audio disponible</span>
+        </div>
+        ${recording.resume_text ? '<div class="orphan-card-meta"><span>📝</span><span>Résumé</span></div>' : ""}
+      </div>
+    </div>
+  `
+}
+
+
+async function openOrphanModal(recording) {
+  currentOrphanRecording = recording
+
+  const modal = document.getElementById("orphan-modal")
+  modal.querySelector("#orphan-modal-title").textContent = `Enregistrement #${recording.id}`
+  modal.querySelector("#orphan-modal-date").textContent = `📅 ${formatDate(recording.created_at)}`
+  const statusEl = modal.querySelector("#orphan-audio-status")
+  statusEl.textContent = getStatusLabel(recording.status)
+  statusEl.className = `audio-status ${recording.status}`
+
+  // Charger l'audio depuis la colonne audio_url
+  orphanAudioPlayer.src = recording.audio_url || ""
+
+  // Transcription cliquable
+  const segments = recording.transcription_segments || []
+  displayOrphanTranscription(recording.transcription_text, segments)
+
+  // Afficher le résumé
+  displayOrphanResume(recording.resume_text)
+
+  modal.classList.add("active")
+}
+
+// Transcription cliquable
+function displayOrphanTranscription(text, segments) {
+  const container = document.getElementById("orphan-transcription-text")
+  container.innerHTML = ""
+
+  if (!text) {
+    container.innerHTML = '<p class="placeholder">Aucune transcription disponible</p>'
+    return
+  }
+
+  // Utiliser les segments pour le mapping start/end
+  if (segments && segments.length > 0) {
+    segments.forEach((seg) => {
+      // On peut splitter le texte en mots
+      const words = seg.text.split(" ")
+      let offset = seg.start
+
+      words.forEach((word) => {
+        const span = document.createElement("span")
+        span.className = "word"
+        span.dataset.start = offset
+        span.textContent = word
+        span.addEventListener("click", () => {
+          orphanAudioPlayer.currentTime = parseFloat(span.dataset.start)
+          orphanAudioPlayer.play()
+
+          // highlight
+          container.querySelectorAll(".word").forEach((w) => w.classList.remove("active"))
+          span.classList.add("active")
+        })
+        container.appendChild(span)
+        container.appendChild(document.createTextNode(" "))
+
+        // Estimation simple du temps pour chaque mot
+        const wordDuration = (seg.end - seg.start) / words.length
+        offset += wordDuration
       })
-    : ""
+    })
+  } else {
+    container.textContent = text
+  }
+}
 
-  content.appendChild(h)
-  content.appendChild(date)
+function displayOrphanResume(text) {
+  const container = document.getElementById("orphan-resume-text")
+  container.innerHTML = text ? `<p>${text}</p>` : '<p class="placeholder">Aucun résumé disponible</p>'
+}
+function closeOrphanModal() {
+  document.getElementById("orphan-modal").classList.remove("active")
+  if (orphanAudioPlayer) {
+    orphanAudioPlayer.pause()
+  }
+}
 
-  const html = transformText(entry.resume_text || entry.transcription_text || "")
-  const summary = document.createElement("div")
-  summary.id = "summary"
-  summary.innerHTML = `<h4>📝 Résumé</h4>${html}`
-  content.appendChild(summary)
+// =====================================================
+// MODAL ET DÉTAILS DU COURS
+// =====================================================
 
-  const controls = document.createElement("div")
-  controls.className = "controls-row"
+async function openCourseModal(course, day, recordings) {
+  const modal = document.getElementById("modal")
+  const modalTitle = document.getElementById("modal-title")
+  const modalProf = document.getElementById("modal-prof")
+  const modalSalle = document.getElementById("modal-salle")
+  const modalTime = document.getElementById("modal-time")
 
-  let isPlaying = false
-  const playBtn = document.createElement("button")
-  playBtn.className = "btn-small playBtn"
-  playBtn.innerHTML = "▶ Écouter"
-  playBtn.addEventListener("click", () => {
-    const text = entry.resume_text || entry.transcription_text || ""
-    if (!text) return
-    if ("speechSynthesis" in window) {
-      if (isPlaying) {
-        window.speechSynthesis.cancel()
-        playBtn.innerHTML = "▶ Écouter"
-        playBtn.classList.remove("playing")
-        isPlaying = false
-      } else {
-        const u = new SpeechSynthesisUtterance(text)
-        u.lang = "fr-FR"
-        u.rate = speechRate
-        u.onend = () => {
-          playBtn.innerHTML = "▶ Écouter"
-          playBtn.classList.remove("playing")
-          isPlaying = false
+  // Mettre à jour les infos du modal
+  modalTitle.textContent = course.cours
+  modalProf.textContent = `👨‍🏫 ${course.prof}`
+  modalSalle.textContent = `📍 ${course.salle}`
+  modalTime.textContent = `🕐 ${course.debut} - ${course.fin}`
+
+  // Afficher les enregistrements
+  displayRecordings(recordings)
+
+  // Si un enregistrement existe, le charger
+  if (recordings.length > 0) {
+    await loadRecording(recordings[0])
+  } else {
+    clearAudioSection()
+  }
+
+  // Afficher le modal
+  modal.classList.add("active")
+}
+
+function displayRecordings(recordings) {
+  const container = document.getElementById("recordings-container")
+
+  if (recordings.length === 0) {
+    container.innerHTML = '<p class="placeholder">Aucun enregistrement pour ce cours</p>'
+    return
+  }
+
+  container.innerHTML = recordings
+    .map(
+      (rec, index) => `
+        <div class="recording-item ${index === 0 ? "active" : ""}" data-id="${rec.id}">
+            <div class="recording-icon">🎙️</div>
+            <div class="recording-details">
+                <div class="recording-date">${formatDate(rec.created_at)}</div>
+                <div class="recording-status">${getStatusLabel(rec.status)}</div>
+            </div>
+        </div>
+    `,
+    )
+    .join("")
+
+  // Event listeners pour les enregistrements
+  container.querySelectorAll(".recording-item").forEach((item) => {
+    item.addEventListener("click", async () => {
+      const rec = recordings.find((r) => r.id == item.dataset.id)
+      if (rec) {
+        container.querySelectorAll(".recording-item").forEach((i) => i.classList.remove("active"))
+        item.classList.add("active")
+        await loadRecording(rec)
+      }
+    })
+  })
+}
+
+async function loadRecording(recording) {
+  currentRecording = recording
+
+  // Mettre à jour le statut
+  const statusEl = document.getElementById("audio-status")
+  statusEl.textContent = getStatusLabel(recording.status)
+  statusEl.className = `audio-status ${recording.status}`
+
+  // Charger l'audio
+  if (recording.audio_source) {
+    const audioUrl = await getAudioUrl(recording.audio_source)
+    if (audioUrl) {
+      audioPlayer.src = audioUrl
+    }
+  }
+
+  // Afficher la transcription
+  displayTranscription(recording.transcription_text, recording.timestamps)
+
+  // Afficher le résumé
+  displayResume(recording.resume_text)
+}
+
+function displayTranscription(text, timestamps) {
+  const container = document.getElementById("transcription-text")
+
+  if (!text) {
+    container.innerHTML = '<p class="placeholder">Aucune transcription disponible</p>'
+    return
+  }
+
+  // Si on a des timestamps, rendre les mots cliquables
+  if (timestamps && Array.isArray(timestamps)) {
+    const wordsHtml = timestamps
+      .map((item, index) => {
+        const word = item.word || item.text || ""
+        const start = item.start || item.timestamp || 0
+        return `<span class="word" data-start="${start}" data-index="${index}">${word}</span>`
+      })
+      .join(" ")
+
+    container.innerHTML = wordsHtml
+
+    // Event listeners pour les mots
+    container.querySelectorAll(".word").forEach((wordEl) => {
+      wordEl.addEventListener("click", () => {
+        const startTime = Number.parseFloat(wordEl.dataset.start)
+        if (audioPlayer && !isNaN(startTime)) {
+          audioPlayer.currentTime = startTime
+          audioPlayer.play()
+
+          // Highlight le mot actif
+          container.querySelectorAll(".word").forEach((w) => w.classList.remove("active"))
+          wordEl.classList.add("active")
         }
-        window.speechSynthesis.cancel()
-        window.speechSynthesis.speak(u)
-        playBtn.innerHTML = "⏹ Stop"
-        playBtn.classList.add("playing")
-        isPlaying = true
-      }
-    }
-  })
-
-  const copyBtn = document.createElement("button")
-  copyBtn.className = "btn-small copyBtn"
-  copyBtn.innerHTML = "📋 Copier"
-  copyBtn.addEventListener("click", () => {
-    const txt = entry.resume_text || entry.transcription_text || ""
-    navigator.clipboard.writeText(txt).then(() => {
-      showToast("Copié dans le presse-papier", "success")
+      })
     })
-  })
-
-  const exportBtn = document.createElement("button")
-  exportBtn.className = "btn-small exportBtn"
-  exportBtn.innerHTML = "📥 Exporter"
-  exportBtn.addEventListener("click", () => {
-    const blob = new Blob([entry.transcription_text || entry.resume_text || ""], { type: "text/plain;charset=utf-8" })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = `${entry.audio_source || entry.id || "transcription"}.txt`
-    a.click()
-    URL.revokeObjectURL(url)
-    showToast("Fichier exporté", "success")
-  })
-
-  controls.appendChild(playBtn)
-  controls.appendChild(copyBtn)
-  controls.appendChild(exportBtn)
-  content.appendChild(controls)
-
-  const more = document.createElement("button")
-  more.className = "showMore"
-  more.textContent = "📄 Afficher la transcription complète"
-  content.appendChild(more)
-
-  const full = document.createElement("div")
-  full.id = "fullText"
-  full.style.display = "none"
-  const pre = document.createElement("pre")
-  pre.style.whiteSpace = "pre-wrap"
-  pre.textContent = ""
-  full.appendChild(pre)
-  content.appendChild(full)
-
-  more.addEventListener("click", () => {
-    const raw = entry.transcription_text || entry.resume_text || ""
-    pre.textContent = raw
-    full.style.display = "block"
-    more.style.display = "none"
-  })
-}
-
-// ============== MODAL HANDLING ==============
-const closeBtn = getEl("closeModal")
-if (closeBtn) {
-  closeBtn.addEventListener("click", () => {
-    const modal = getEl("modal")
-    if (modal) modal.classList.add("hidden")
-    if (window.speechSynthesis) window.speechSynthesis.cancel()
-  })
-}
-
-// Close modal on backdrop click
-document.addEventListener("click", (e) => {
-  if (e.target.classList.contains("modal-backdrop")) {
-    const modal = e.target.closest(".modal")
-    if (modal) {
-      modal.classList.add("hidden")
-      if (window.speechSynthesis) window.speechSynthesis.cancel()
-    }
-  }
-})
-
-// ============== WEEK NAVIGATION ==============
-function setupWeekNavigation() {
-  const prev = getEl("prevWeek")
-  const next = getEl("nextWeek")
-  const today = getEl("todayBtn")
-
-  if (prev) prev.addEventListener("click", () => changeWeek(-1))
-  if (next) next.addEventListener("click", () => changeWeek(1))
-  if (today) today.addEventListener("click", goToToday)
-}
-
-function changeWeek(delta) {
-  if (!window.currentIsoWeek) {
-    window.currentIsoWeek = new Date().toISOString().slice(0, 10)
-  }
-  const base = new Date(window.currentIsoWeek)
-  base.setDate(base.getDate() + 7 * delta)
-  window.currentIsoWeek = base.toISOString().slice(0, 10)
-  const wkKey = weekKeyFromDate(window.currentIsoWeek)
-  const wl = getEl("weekLabel")
-  if (wl) wl.textContent = wkKey === "semaine_A" ? "Semaine A" : "Semaine B"
-
-  fetchJson("timetable.json").then((t) => {
-    window._timetable = t
-    renderTimetable(t, wkKey || "semaine_A")
-  })
-}
-
-function goToToday() {
-  const today = new Date()
-  window.currentIsoWeek = today.toISOString().slice(0, 10)
-  window.currentMobileDay = today.getDay() === 0 ? 6 : today.getDay() - 1
-  const wkKey = weekKeyFromDate(window.currentIsoWeek)
-  const wl = getEl("weekLabel")
-  if (wl) wl.textContent = wkKey === "semaine_A" ? "Semaine A" : "Semaine B"
-
-  fetchJson("timetable.json").then((t) => {
-    window._timetable = t
-    renderTimetable(t, wkKey || "semaine_A")
-  })
-  showToast("Retour à aujourd'hui", "info")
-}
-
-// ============== SEARCH FUNCTIONALITY ==============
-function setupSearch() {
-  const searchToggle = getEl("searchToggle")
-  const searchBar = getEl("searchBar")
-  const searchInput = getEl("searchInput")
-  const searchClear = getEl("searchClear")
-
-  if (searchToggle && searchBar) {
-    searchToggle.addEventListener("click", () => {
-      searchBar.classList.toggle("hidden")
-      if (!searchBar.classList.contains("hidden") && searchInput) {
-        searchInput.focus()
-      }
-    })
-  }
-
-  if (searchClear && searchInput) {
-    searchClear.addEventListener("click", () => {
-      searchInput.value = ""
-      clearSearchHighlights()
-    })
-  }
-
-  if (searchInput) {
-    let debounce
-    searchInput.addEventListener("input", () => {
-      clearTimeout(debounce)
-      debounce = setTimeout(() => {
-        performSearch(searchInput.value)
-      }, 300)
-    })
-  }
-}
-
-function performSearch(query) {
-  clearSearchHighlights()
-  if (!query || query.length < 2) return
-
-  const q = query.toLowerCase()
-  const courseCards = document.querySelectorAll(".course-card")
-  const recordingCards = document.querySelectorAll(".recording-card, .recording-item")
-
-  let found = 0
-
-  courseCards.forEach((card) => {
-    const info = JSON.parse(card.dataset.info || "{}")
-    const text = `${info.cours || ""} ${info.prof || ""} ${info.salle || ""}`.toLowerCase()
-    if (text.includes(q)) {
-      card.classList.add("search-highlight")
-      found++
-    }
-  })
-
-  recordingCards.forEach((card) => {
-    const text = card.textContent.toLowerCase()
-    if (text.includes(q)) {
-      card.classList.add("search-highlight")
-      found++
-    }
-  })
-
-  if (found > 0) {
-    showToast(`${found} résultat(s) trouvé(s)`, "success")
   } else {
-    showToast("Aucun résultat", "info")
+    container.innerHTML = `<p>${text}</p>`
   }
 }
 
-function clearSearchHighlights() {
-  document.querySelectorAll(".search-highlight").forEach((el) => {
-    el.classList.remove("search-highlight")
+function displayResume(text) {
+  const container = document.getElementById("resume-text")
+
+  if (!text) {
+    container.innerHTML = '<p class="placeholder">Aucun résumé disponible</p>'
+    return
+  }
+
+  container.innerHTML = `<p>${text}</p>`
+}
+
+function clearAudioSection() {
+  document.getElementById("audio-status").textContent = ""
+  document.getElementById("audio-status").className = "audio-status"
+  audioPlayer.src = ""
+  document.getElementById("transcription-text").innerHTML = '<p class="placeholder">Aucune transcription disponible</p>'
+  document.getElementById("resume-text").innerHTML = '<p class="placeholder">Aucun résumé disponible</p>'
+}
+
+// =====================================================
+// EVENT LISTENERS
+// =====================================================
+
+function setupEventListeners() {
+  // Toggle semaine A/B
+  document.getElementById("btn-semaine-a").addEventListener("click", () => {
+    currentWeek = "semaine_A"
+    updateWeekButtons()
+    generateTimetable()
+  })
+
+  document.getElementById("btn-semaine-b").addEventListener("click", () => {
+    currentWeek = "semaine_B"
+    updateWeekButtons()
+    generateTimetable()
+  })
+
+  // Fermer le modal cours
+  document.getElementById("modal-close").addEventListener("click", closeModal)
+  document.getElementById("modal").addEventListener("click", (e) => {
+    if (e.target.id === "modal") closeModal()
+  })
+
+  document.getElementById("orphan-modal-close").addEventListener("click", closeOrphanModal)
+  document.getElementById("orphan-modal").addEventListener("click", (e) => {
+    if (e.target.id === "orphan-modal") closeOrphanModal()
+  })
+
+  // Tabs modal cours
+  document.querySelectorAll("#modal .tab-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const tabId = btn.dataset.tab
+
+      document.querySelectorAll("#modal .tab-btn").forEach((b) => b.classList.remove("active"))
+      document.querySelectorAll("#modal .tab-pane").forEach((p) => p.classList.remove("active"))
+
+      btn.classList.add("active")
+      document.getElementById(`tab-${tabId}`).classList.add("active")
+    })
+  })
+
+  document.querySelectorAll("#orphan-modal .tab-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const tabId = btn.dataset.tab
+
+      document.querySelectorAll("#orphan-modal .tab-btn").forEach((b) => b.classList.remove("active"))
+      document.querySelectorAll("#orphan-modal .tab-pane").forEach((p) => p.classList.remove("active"))
+
+      btn.classList.add("active")
+      document.getElementById(`tab-${tabId}`).classList.add("active")
+    })
+  })
+
+  // Filtres emploi du temps
+  document.getElementById("filter-matiere").addEventListener("change", applyFilters)
+  document.getElementById("filter-status").addEventListener("change", applyFilters)
+
+  document.getElementById("orphan-filter-status").addEventListener("change", displayOrphanRecordings)
+
+  // Mise à jour du mot actif pendant la lecture
+  if (audioPlayer) {
+    audioPlayer.addEventListener("timeupdate", updateActiveWord)
+  }
+
+  if (orphanAudioPlayer) {
+    orphanAudioPlayer.addEventListener("timeupdate", updateOrphanActiveWord)
+  }
+}
+
+function updateWeekButtons() {
+  document.getElementById("btn-semaine-a").classList.toggle("active", currentWeek === "semaine_A")
+  document.getElementById("btn-semaine-b").classList.toggle("active", currentWeek === "semaine_B")
+}
+
+function closeModal() {
+  document.getElementById("modal").classList.remove("active")
+  if (audioPlayer) {
+    audioPlayer.pause()
+  }
+}
+
+function updateActiveWord() {
+  if (!audioPlayer || !currentRecording?.timestamps) return
+
+  const currentTime = audioPlayer.currentTime
+  const words = document.querySelectorAll("#transcription-text .word")
+
+  words.forEach((word) => {
+    const start = Number.parseFloat(word.dataset.start)
+    const nextWord = word.nextElementSibling
+    const end = nextWord ? Number.parseFloat(nextWord.dataset.start) : start + 1
+
+    if (currentTime >= start && currentTime < end) {
+      words.forEach((w) => w.classList.remove("active"))
+      word.classList.add("active")
+      word.scrollIntoView({ behavior: "smooth", block: "center" })
+    }
   })
 }
 
-// ============== STATS PANEL ==============
-function setupStats() {
-  const statsToggle = getEl("statsToggle")
-  const statsPanel = getEl("statsPanel")
+// Mettre à jour le mot actif pour les orphelins
+function updateOrphanActiveWord() {
+  if (!orphanAudioPlayer || !currentOrphanRecording?.timestamps) return
 
-  if (statsToggle && statsPanel) {
-    statsToggle.addEventListener("click", () => {
-      statsPanel.classList.toggle("hidden")
-    })
-  }
-}
+  const currentTime = orphanAudioPlayer.currentTime
+  const words = document.querySelectorAll("#orphan-transcription-text .word")
 
-// ============== THEME TOGGLE ==============
-function setupTheme() {
-  const themeToggle = getEl("themeToggle")
-  const darkModeCheck = getEl("darkModeCheck")
+  words.forEach((word, i) => {
+    const start = Number.parseFloat(word.dataset.start)
+    const end = currentOrphanRecording.timestamps[i + 1]?.start || start + 1
 
-  const savedTheme = localStorage.getItem("theme")
-  if (savedTheme === "dark") {
-    document.documentElement.setAttribute("data-theme", "dark")
-    if (darkModeCheck) darkModeCheck.checked = true
-    if (themeToggle) themeToggle.textContent = "☀️"
-  }
-
-  if (themeToggle) {
-    themeToggle.addEventListener("click", () => {
-      toggleTheme()
-    })
-  }
-
-  if (darkModeCheck) {
-    darkModeCheck.addEventListener("change", () => {
-      toggleTheme()
-    })
-  }
-}
-
-function toggleTheme() {
-  const themeToggle = getEl("themeToggle")
-  const darkModeCheck = getEl("darkModeCheck")
-
-  const isDark = document.documentElement.getAttribute("data-theme") === "dark"
-
-  if (isDark) {
-    document.documentElement.removeAttribute("data-theme")
-    localStorage.setItem("theme", "light")
-    if (themeToggle) themeToggle.textContent = "🌙"
-    if (darkModeCheck) darkModeCheck.checked = false
-  } else {
-    document.documentElement.setAttribute("data-theme", "dark")
-    localStorage.setItem("theme", "dark")
-    if (themeToggle) themeToggle.textContent = "☀️"
-    if (darkModeCheck) darkModeCheck.checked = true
-  }
-}
-
-// ============== SETTINGS ==============
-function setupSettings() {
-  const settingsToggle = getEl("settingsToggle")
-  const settingsModal = getEl("settingsModal")
-  const closeSettings = getEl("closeSettings")
-  const compactCheck = getEl("compactCheck")
-  const speechRate = getEl("speechRate")
-  const exportAll = getEl("exportAll")
-  const clearCache = getEl("clearCache")
-
-  if (settingsToggle && settingsModal) {
-    settingsToggle.addEventListener("click", () => {
-      settingsModal.classList.remove("hidden")
-    })
-  }
-
-  if (closeSettings && settingsModal) {
-    closeSettings.addEventListener("click", () => {
-      settingsModal.classList.add("hidden")
-    })
-  }
-
-  // Load saved settings
-  if (compactCheck) {
-    compactCheck.checked = localStorage.getItem("compact") === "true"
-    if (compactCheck.checked) {
-      document.querySelector(".container")?.classList.add("compact")
+    if (currentTime >= start && currentTime < end) {
+      words.forEach((w) => w.classList.remove("active"))
+      word.classList.add("active")
+      word.scrollIntoView({ behavior: "smooth", block: "center" })
     }
-    compactCheck.addEventListener("change", () => {
-      localStorage.setItem("compact", compactCheck.checked)
-      document.querySelector(".container")?.classList.toggle("compact", compactCheck.checked)
-    })
-  }
-
-  if (speechRate) {
-    speechRate.value = localStorage.getItem("speechRate") || "1"
-    speechRate.addEventListener("change", () => {
-      localStorage.setItem("speechRate", speechRate.value)
-    })
-  }
-
-  if (exportAll) {
-    exportAll.addEventListener("click", () => {
-      const registry = window._registry || []
-      const blob = new Blob([JSON.stringify(registry, null, 2)], { type: "application/json" })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement("a")
-      a.href = url
-      a.download = "audiocours-export.json"
-      a.click()
-      URL.revokeObjectURL(url)
-      showToast("Données exportées", "success")
-    })
-  }
-
-  if (clearCache) {
-    clearCache.addEventListener("click", () => {
-      localStorage.clear()
-      showToast("Cache vidé", "success")
-      setTimeout(() => location.reload(), 1000)
-    })
-  }
+  })
 }
 
-// ============== MAIN ==============
-async function main() {
-  try {
-    const registry = await fetchJson("registry.json")
-    const timetable = await fetchJson("timetable.json")
+// =====================================================
+// FILTRES
+// =====================================================
 
-    window._registry = registry
-    window._timetable = timetable
+function populateMatiereFilter() {
+  const select = document.getElementById("filter-matiere")
+  const matieres = new Set()
 
-    setupWeekNavigation()
-    setupSearch()
-    setupStats()
-    setupTheme()
-    setupSettings()
+  // Collecter toutes les matières
+  Object.values(TIMETABLE_DATA).forEach((week) => {
+    Object.values(week).forEach((day) => {
+      day.forEach((course) => matieres.add(course.cours))
+    })
+  })
 
-    const loading = getEl("loading")
-    if (loading) loading.style.display = "none"
+  // Ajouter les options
+  Array.from(matieres)
+    .sort()
+    .forEach((matiere) => {
+      const option = document.createElement("option")
+      option.value = matiere
+      option.textContent = matiere
+      select.appendChild(option)
+    })
+}
 
-    if (registry.length > 0) {
-      const latest = registry[registry.length - 1]
-      const wk = weekKeyFromDate(latest.created_at || latest.updated_at || latest.date || "")
-      const wl = getEl("weekLabel")
-      if (wl) wl.textContent = wk === "semaine_A" ? "Semaine A" : "Semaine B"
-      window.currentIsoWeek = (latest.created_at || new Date().toISOString()).slice(0, 10)
-      renderTimetable(timetable, wk || "semaine_A")
+function applyFilters() {
+  const matiereFilter = document.getElementById("filter-matiere").value
+  const statusFilter = document.getElementById("filter-status").value
+
+  const cards = document.querySelectorAll(".course-card")
+
+  cards.forEach((card) => {
+    const courseName = card.querySelector(".course-name").textContent
+    const hasStatusClass = statusFilter ? card.classList.contains(`status-${statusFilter}`) : true
+    const matchesMatiere = matiereFilter ? courseName === matiereFilter : true
+
+    if (matchesMatiere && hasStatusClass) {
+      card.style.opacity = "1"
+      card.style.pointerEvents = "auto"
     } else {
-      const wl = getEl("weekLabel")
-      if (wl) wl.textContent = "Semaine A"
-      renderTimetable(timetable, "semaine_A")
+      card.style.opacity = "0.3"
+      card.style.pointerEvents = "none"
     }
-
-    window.addEventListener("resize", () => {
-      updateMobileDayView()
-    })
-
-    // Keyboard shortcuts
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") {
-        const modal = getEl("modal")
-        const settingsModal = getEl("settingsModal")
-        const entryPage = document.querySelector(".entry-page")
-
-        if (modal && !modal.classList.contains("hidden")) {
-          modal.classList.add("hidden")
-          if (window.speechSynthesis) window.speechSynthesis.cancel()
-        }
-        if (settingsModal && !settingsModal.classList.contains("hidden")) {
-          settingsModal.classList.add("hidden")
-        }
-        if (entryPage) {
-          entryPage.remove()
-          if (window.speechSynthesis) window.speechSynthesis.cancel()
-        }
-      }
-
-      if (e.ctrlKey && e.key === "f") {
-        e.preventDefault()
-        const searchBar = getEl("searchBar")
-        const searchInput = getEl("searchInput")
-        if (searchBar) {
-          searchBar.classList.remove("hidden")
-          if (searchInput) searchInput.focus()
-        }
-      }
-    })
-  } catch (e) {
-    const loading = getEl("loading")
-    if (loading) {
-      loading.textContent = "Erreur de chargement"
-      loading.classList.remove("hidden")
-    }
-    console.error(e)
-    showToast("Erreur de chargement", "error")
-  }
+  })
 }
 
-main()
+// =====================================================
+// UTILITAIRES
+// =====================================================
+
+function getStatusLabel(status) {
+  const labels = {
+    waiting: "En attente...",
+    detected: "Détecté",
+    transcribing: "Transcription en cours...",
+    summarizing: "Résumé en cours...",
+    done: "Terminé",
+    error: "Erreur",
+  }
+  return labels[status] || status || "Inconnu"
+}
+
+function formatDate(dateString) {
+  if (!dateString) return "Date inconnue"
+
+  const date = new Date(dateString)
+  return date.toLocaleDateString("fr-FR", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+}

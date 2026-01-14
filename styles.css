@@ -1,0 +1,787 @@
+/* ===== Variables CSS ===== */
+:root {
+  --color-primary: #2563eb;
+  --color-primary-dark: #1d4ed8;
+  --color-background: #f8fafc;
+  --color-surface: #ffffff;
+  --color-text: #1e293b;
+  --color-text-muted: #64748b;
+  --color-border: #e2e8f0;
+
+  /* Status colors */
+  --status-detected: #fbbf24;
+  --status-transcribing: #60a5fa;
+  --status-summarizing: #a78bfa;
+  --status-done: #34d399;
+  --status-error: #f87171;
+  --status-none: #cbd5e1;
+
+  /* Spacing */
+  --spacing-xs: 0.25rem;
+  --spacing-sm: 0.5rem;
+  --spacing-md: 1rem;
+  --spacing-lg: 1.5rem;
+  --spacing-xl: 2rem;
+
+  /* Border radius */
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1);
+}
+
+/* ===== Reset & Base ===== */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  background-color: var(--color-background);
+  color: var(--color-text);
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+/* ===== Loader ===== */
+.loader {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: var(--color-background);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  transition: opacity 0.3s ease;
+}
+
+.loader.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.spinner {
+  width: 48px;
+  height: 48px;
+  border: 4px solid var(--color-border);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ===== Header ===== */
+.header {
+  background: var(--color-surface);
+  padding: var(--spacing-lg) var(--spacing-xl);
+  text-align: center;
+  border-bottom: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
+}
+
+.header h1 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.subtitle {
+  color: var(--color-text-muted);
+  font-size: 0.95rem;
+  margin-top: var(--spacing-xs);
+}
+
+/* ===== Controls ===== */
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-md);
+  padding: var(--spacing-lg) var(--spacing-xl);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  align-items: center;
+  justify-content: space-between;
+}
+
+.week-toggle {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
+.week-btn {
+  padding: var(--spacing-sm) var(--spacing-lg);
+  border: 2px solid var(--color-border);
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.week-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.week-btn.active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: white;
+}
+
+.filters {
+  display: flex;
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
+}
+
+.filters select {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  font-size: 0.9rem;
+  color: var(--color-text);
+  cursor: pointer;
+  min-width: 160px;
+}
+
+/* ===== Timetable ===== */
+.timetable-container {
+  padding: var(--spacing-lg);
+  overflow-x: auto;
+}
+
+.timetable {
+  display: grid;
+  grid-template-columns: 80px repeat(5, 1fr);
+  gap: 2px;
+  background: var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  min-width: 800px;
+}
+
+.timetable-header {
+  background: var(--color-primary);
+  color: white;
+  padding: var(--spacing-md);
+  font-weight: 600;
+  text-align: center;
+  font-size: 0.9rem;
+}
+
+.time-slot {
+  background: var(--color-surface);
+  padding: var(--spacing-sm);
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 60px;
+}
+
+.course-cell {
+  background: var(--color-surface);
+  min-height: 60px;
+  position: relative;
+}
+
+.course-card {
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  padding: var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  overflow: hidden;
+  border: 1px solid var(--status-none);
+  background-color: #7897db;
+  z-index: 1;
+}
+
+
+.course-card.status-detected {
+  border-left-color: var(--status-detected);
+  background: #fefce8;
+}
+.course-card.status-transcribing {
+  border-left-color: var(--status-transcribing);
+  background: #eff6ff;
+}
+.course-card.status-summarizing {
+  border-left-color: var(--status-summarizing);
+  background: #f5f3ff;
+}
+.course-card.status-done {
+  border-left-color: var(--status-done);
+  background: #ecfdf5;
+}
+.course-card.status-error {
+  border-left-color: var(--status-error);
+  background: #fef2f2;
+}
+
+.course-name {
+  font-weight: 600;
+  font-size: 0.75rem;
+  line-height: 1.3;
+  margin-bottom: 2px;
+  color: var(--color-text);
+}
+
+.course-info {
+  font-size: 0.7rem;
+  color: var(--color-text-muted);
+}
+
+.course-indicator {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--status-none);
+}
+
+.course-indicator.has-audio {
+  background: var(--status-done);
+}
+
+/* ===== Modal ===== */
+.modal {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-lg);
+}
+
+.modal.active {
+  display: flex;
+}
+
+.modal-content {
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  max-width: 800px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  position: relative;
+  box-shadow: var(--shadow-lg);
+}
+
+.modal-close {
+  position: absolute;
+  top: var(--spacing-md);
+  right: var(--spacing-md);
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: var(--color-background);
+  border-radius: 50%;
+  font-size: 1.25rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+
+.modal-close:hover {
+  background: var(--color-border);
+}
+
+.modal-header {
+  padding: var(--spacing-lg);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.modal-header h2 {
+  font-size: 1.25rem;
+  margin-bottom: var(--spacing-sm);
+}
+
+.modal-info {
+  display: flex;
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+}
+
+.modal-info span {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+/* ===== Audio Section ===== */
+.audio-section {
+  padding: var(--spacing-lg);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-background);
+}
+
+.audio-section h3 {
+  font-size: 0.9rem;
+  margin-bottom: var(--spacing-md);
+  color: var(--color-text-muted);
+}
+
+.audio-player {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.audio-player audio {
+  width: 100%;
+}
+
+.audio-status {
+  font-size: 0.8rem;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  display: inline-block;
+}
+
+.audio-status.detected {
+  background: #fef3c7;
+  color: #92400e;
+}
+.audio-status.transcribing {
+  background: #dbeafe;
+  color: #1e40af;
+}
+.audio-status.summarizing {
+  background: #ede9fe;
+  color: #5b21b6;
+}
+.audio-status.done {
+  background: #d1fae5;
+  color: #065f46;
+}
+.audio-status.error {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+/* ===== Tabs ===== */
+.tabs {
+  display: flex;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.tab-btn {
+  flex: 1;
+  padding: var(--spacing-md);
+  border: none;
+  background: transparent;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: all 0.2s;
+  border-bottom: 2px solid transparent;
+}
+
+.tab-btn:hover {
+  color: var(--color-text);
+  background: var(--color-background);
+}
+
+.tab-btn.active {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+}
+
+/* ===== Tab Content ===== */
+.tab-content {
+  padding: var(--spacing-lg);
+}
+
+.tab-pane {
+  display: none;
+}
+
+.tab-pane.active {
+  display: block;
+}
+
+.transcription-text,
+.resume-text {
+  font-size: 0.95rem;
+  line-height: 1.8;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.placeholder {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+/* Clickable words in transcription */
+.word {
+  cursor: pointer;
+  padding: 1px 2px;
+  border-radius: 2px;
+  transition: background 0.15s;
+}
+
+.word:hover {
+  background: var(--color-primary);
+  color: white;
+}
+
+.word.active {
+  background: var(--color-primary-dark);
+  color: white;
+}
+
+/* ===== Recordings List ===== */
+.recordings-list {
+  padding: var(--spacing-lg);
+  border-top: 1px solid var(--color-border);
+  background: var(--color-background);
+}
+
+.recordings-list h3 {
+  font-size: 0.9rem;
+  margin-bottom: var(--spacing-md);
+  color: var(--color-text-muted);
+}
+
+.recording-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md);
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--spacing-sm);
+  cursor: pointer;
+  transition: box-shadow 0.2s;
+}
+
+.recording-item:hover {
+  box-shadow: var(--shadow-sm);
+}
+
+.recording-item.active {
+  border: 2px solid var(--color-primary);
+}
+
+.recording-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+}
+
+.recording-details {
+  flex: 1;
+}
+
+.recording-date {
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.recording-status {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+/* ===== Legend ===== */
+.legend {
+  padding: var(--spacing-lg) var(--spacing-xl);
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+}
+
+.legend h4 {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  margin-bottom: var(--spacing-md);
+}
+
+.legend-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-lg);
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-size: 0.85rem;
+}
+
+.legend-color {
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-sm);
+}
+
+.legend-color.status-detected {
+  background: var(--status-detected);
+}
+.legend-color.status-transcribing {
+  background: var(--status-transcribing);
+}
+.legend-color.status-summarizing {
+  background: var(--status-summarizing);
+}
+.legend-color.status-done {
+  background: var(--status-done);
+}
+.legend-color.status-error {
+  background: var(--status-error);
+}
+
+/* ===== Section Enregistrements Orphelins ===== */
+.orphan-recordings-section {
+  padding: var(--spacing-xl);
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  margin-top: var(--spacing-lg);
+}
+
+.orphan-header {
+  margin-bottom: var(--spacing-lg);
+}
+
+.orphan-header h2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--color-text);
+  margin-bottom: var(--spacing-xs);
+}
+
+.orphan-subtitle {
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+  margin-bottom: var(--spacing-md);
+}
+
+.orphan-filters {
+  display: flex;
+  gap: var(--spacing-md);
+}
+
+.orphan-filters select {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  font-size: 0.9rem;
+  color: var(--color-text);
+  cursor: pointer;
+  min-width: 160px;
+}
+
+.orphan-recordings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--spacing-md);
+}
+
+/* Carte d'enregistrement orphelin */
+.orphan-card {
+  background: var(--color-background);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-lg);
+  border-left: 4px solid var(--status-none);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: var(--shadow-sm);
+}
+
+.orphan-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.orphan-card.status-detected {
+  border-left-color: var(--status-detected);
+}
+.orphan-card.status-transcribing {
+  border-left-color: var(--status-transcribing);
+}
+.orphan-card.status-summarizing {
+  border-left-color: var(--status-summarizing);
+}
+.orphan-card.status-done {
+  border-left-color: var(--status-done);
+}
+.orphan-card.status-error {
+  border-left-color: var(--status-error);
+}
+
+.orphan-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: var(--spacing-md);
+}
+
+.orphan-card-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-md);
+  background: var(--color-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 1.5rem;
+}
+
+.orphan-card-status {
+  font-size: 0.75rem;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  font-weight: 500;
+}
+
+.orphan-card-status.detected {
+  background: #fef3c7;
+  color: #92400e;
+}
+.orphan-card-status.transcribing {
+  background: #dbeafe;
+  color: #1e40af;
+}
+.orphan-card-status.summarizing {
+  background: #ede9fe;
+  color: #5b21b6;
+}
+.orphan-card-status.done {
+  background: #d1fae5;
+  color: #065f46;
+}
+.orphan-card-status.error {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.orphan-card-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text);
+  margin-bottom: var(--spacing-xs);
+}
+
+.orphan-card-date {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  margin-bottom: var(--spacing-md);
+}
+
+.orphan-card-preview {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  background: var(--color-surface);
+  padding: var(--spacing-sm);
+  border-radius: var(--radius-sm);
+}
+
+.orphan-card-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  margin-top: var(--spacing-md);
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--color-border);
+}
+
+.orphan-card-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.orphan-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: var(--spacing-xl);
+  color: var(--color-text-muted);
+}
+
+/* ===== Responsive ===== */
+@media (max-width: 768px) {
+  .controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .week-toggle {
+    justify-content: center;
+  }
+
+  .filters {
+    justify-content: center;
+  }
+
+  .timetable-container {
+    padding: var(--spacing-sm);
+  }
+
+  .modal-content {
+    max-height: 95vh;
+  }
+
+  .modal-info {
+    flex-direction: column;
+    gap: var(--spacing-xs);
+  }
+
+  /* ===== Responsive pour orphelins ===== */
+  .orphan-recordings-section {
+    padding: var(--spacing-lg);
+  }
+
+  .orphan-recordings-grid {
+    grid-template-columns: 1fr;
+  }
+}

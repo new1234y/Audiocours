@@ -1,0 +1,97 @@
+// Données de l'emploi du temps (semaines A et B)
+const TIMETABLE_DATA = {
+  semaine_A: {
+    lundi: [
+      { debut: "08:10", fin: "09:10", cours: "ESPAGNOL LVB", prof: "FABRY M.", salle: "D311" },
+      { debut: "09:10", fin: "10:10", cours: "MATHEMATIQUES", prof: "HERVE L.", salle: "D213" },
+      { debut: "10:20", fin: "11:20", cours: "FRANCAIS", prof: "BESSON A.", salle: "D006" },
+      { debut: "12:30", fin: "13:30", cours: "MATHEMATIQUES", prof: "HERVE L.", salle: "D211" },
+      { debut: "13:30", fin: "14:30", cours: "PHYSIQUE-CHIMIE", prof: "HANSE B.", salle: "D005" },
+      { debut: "14:30", fin: "15:30", cours: "HISTOIRE-GEOGRAPHIE", prof: "LANNELONGUE P.", salle: "D207" },
+      { debut: "15:40", fin: "16:40", cours: "SC. ECONO.& SOCIALES", prof: "BETREMIEUX S.", salle: "D008" },
+    ],
+    mardi: [
+      { debut: "08:10", fin: "09:10", cours: "MATHEMATIQUES", prof: "HERVE L.", salle: "D315" },
+      { debut: "09:10", fin: "10:10", cours: "ESPAGNOL LVB", prof: "FABRY M.", salle: "D308" },
+      { debut: "10:20", fin: "12:20", cours: "EPS", prof: "NOURRY B.", salle: "GYM" },
+      { debut: "13:30", fin: "14:30", cours: "ENSEIGNEMENT MORAL ET CIVIQUE", prof: "LANNELONGUE P.", salle: "D203" },
+      { debut: "14:30", fin: "15:30", cours: "SC. ECONO.& SOCIALES", prof: "BETREMIEUX S.", salle: "D302" },
+      { debut: "15:40", fin: "16:40", cours: "FRANCAIS", prof: "BESSON A.", salle: "D006" },
+      { debut: "16:40", fin: "17:40", cours: "ANGLAIS LVA", prof: "PRISE I.", salle: "D307" },
+    ],
+    mercredi: [
+      { debut: "09:10", fin: "10:10", cours: "HISTOIRE-GEOGRAPHIE", prof: "LANNELONGUE P.", salle: "D207" },
+      { debut: "10:20", fin: "11:20", cours: "ESPAGNOL LVB", prof: "FABRY M.", salle: "D209" },
+    ],
+    jeudi: [
+      { debut: "10:20", fin: "11:20", cours: "MATHEMATIQUES", prof: "HERVE L.", salle: "D205" },
+      { debut: "11:20", fin: "12:20", cours: "ANGLAIS LVA", prof: "PRISE I.", salle: "D307" },
+      { debut: "13:30", fin: "14:30", cours: "ACCOMP.CHOIX ORIENT.", prof: "LANNELONGUE P.", salle: "D104" },
+      { debut: "14:30", fin: "15:30", cours: "FRANCAIS", prof: "BESSON A.", salle: "D211" },
+      { debut: "16:40", fin: "17:40", cours: "FRANCAIS", prof: "BESSON A.", salle: "D200" },
+    ],
+    vendredi: [
+      { debut: "09:10", fin: "10:10", cours: "ANGLAIS LVA", prof: "PRISE I.", salle: "D307" },
+      { debut: "10:20", fin: "11:20", cours: "HISTOIRE-GEOGRAPHIE", prof: "LANNELONGUE P.", salle: "D209" },
+      { debut: "12:30", fin: "13:30", cours: "MATHEMATIQUES", prof: "HERVE L.", salle: "D113-BTS" },
+      { debut: "13:30", fin: "15:00", cours: "PHYSIQUE-CHIMIE", prof: "HANSE B.", salle: "Labo" },
+      { debut: "15:40", fin: "16:40", cours: "SCIENCES VIE ET TERRE", prof: "GALAN J.", salle: "Labo SVT" },
+      { debut: "16:40", fin: "17:40", cours: "FRANCAIS", prof: "BESSON A.", salle: "D006" },
+
+    ],
+  },
+  semaine_B: {
+    lundi: [
+      { debut: "08:10", fin: "09:10", cours: "ESPAGNOL LVB", prof: "FABRY M.", salle: "D311" },
+      { debut: "09:10", fin: "10:10", cours: "MATHEMATIQUES", prof: "HERVE L.", salle: "D213" },
+      { debut: "10:20", fin: "11:20", cours: "FRANCAIS", prof: "BESSON A.", salle: "D006" },
+      { debut: "12:30", fin: "13:30", cours: "MATHEMATIQUES", prof: "HERVE L.", salle: "D211" },
+      { debut: "13:30", fin: "14:30", cours: "PHYSIQUE-CHIMIE", prof: "HANSE B.", salle: "E205" },
+      { debut: "14:30", fin: "15:30", cours: "HISTOIRE-GEOGRAPHIE", prof: "LANNELONGUE P.", salle: "D207" },
+      { debut: "15:40", fin: "16:40", cours: "SC. ECONO.& SOCIALES", prof: "BETREMIEUX S.", salle: "D206" },
+    ],
+    mardi: [
+      { debut: "09:10", fin: "10:10", cours: "MATHEMATIQUES", prof: "HERVE L.", salle: "D315" },
+      { debut: "10:20", fin: "12:20", cours: "EPS", prof: "NOURRY B.", salle: "GYM" },
+      { debut: "13:30", fin: "14:30", cours: "MATHEMATIQUES", prof: "HERVE L.", salle: "D008" },
+      { debut: "14:30", fin: "15:30", cours: "PHYSIQUE-CHIMIE", prof: "HANSE B.", salle: "E205" },
+      { debut: "15:40", fin: "16:40", cours: "FRANCAIS", prof: "BESSON A.", salle: "D006" },
+      { debut: "16:40", fin: "17:40", cours: "ANGLAIS LVA", prof: "PRISE I.", salle: "D307" },
+    ],
+    mercredi: [
+      { debut: "09:10", fin: "10:10", cours: "HISTOIRE-GEOGRAPHIE", prof: "LANNELONGUE P.", salle: "D207" },
+      { debut: "10:20", fin: "11:20", cours: "ESPAGNOL LVB", prof: "FABRY M.", salle: "D209" },
+    ],
+    jeudi: [
+      { debut: "11:20", fin: "12:20", cours: "ANGLAIS LVA", prof: "PRISE I.", salle: "D307" },
+      { debut: "13:30", fin: "14:30", cours: "MATHEMATIQUES", prof: "HERVE L.", salle: "D211" },
+      { debut: "14:30", fin: "15:30", cours: "FRANCAIS", prof: "BESSON A.", salle: "D211" },
+      { debut: "16:40", fin: "17:40", cours: "FRANCAIS", prof: "BESSON A.", salle: "D200" },
+    ],
+    vendredi: [
+      { debut: "09:10", fin: "10:10", cours: "ANGLAIS LVA", prof: "PRISE I.", salle: "D307" },
+      { debut: "10:20", fin: "11:20", cours: "HISTOIRE-GEOGRAPHIE", prof: "LANNELONGUE P.", salle: "D209" },
+      { debut: "12:30", fin: "13:30", cours: "MATHEMATIQUES", prof: "HERVE L.", salle: "D113-BTS" },
+      { debut: "13:30", fin: "15:30", cours: "PHYSIQUE-CHIMIE", prof: "HANSE B.", salle: "Labo" },
+      { debut: "15:40", fin: "16:40", cours: "SCIENCES VIE ET TERRE", prof: "GALAN J.", salle: "Labo SVT" },
+      { debut: "16:40", fin: "17:40", cours: "FRANCAIS", prof: "BESSON A.", salle: "D006" },
+    ],
+  },
+}
+
+// Créneaux horaires de la journée
+const TIME_SLOTS = [
+  { debut: "08:10", fin: "09:10" },
+  { debut: "09:10", fin: "10:10" },
+  { debut: "10:20", fin: "11:20" },
+  { debut: "11:20", fin: "12:20" },
+  { debut: "12:30", fin: "13:30" },
+  { debut: "13:30", fin: "14:30" },
+  { debut: "14:30", fin: "15:30" },
+  { debut: "15:40", fin: "16:40" },
+  { debut: "16:40", fin: "17:40" },
+]
+
+// Jours de la semaine
+const DAYS = ["lundi", "mardi", "mercredi", "jeudi", "vendredi"]
+const DAYS_DISPLAY = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi"]

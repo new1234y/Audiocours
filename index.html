@@ -1,128 +1,197 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no" />
-  <title>Audiocours — Emploi du temps</title>
-  <link rel="stylesheet" href="style.css">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <meta name="description" content="Affichage de l'emploi du temps avec enregistrements audio alignés par horaire" />
-  <meta name="theme-color" content="#667eea" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Emploi du Temps - Audio Cours</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
-  <main class="container">
+    <!-- Loader -->
+    <div id="loader" class="loader">
+        <div class="spinner"></div>
+        <p>Chargement des données...</p>
+    </div>
+
+    <!-- Header -->
     <header class="header">
-      <div class="header-top">
-        <h1>📚 Audiocours</h1>
-        <div class="header-actions">
-          <button id="searchToggle" class="btn-icon" title="Rechercher">🔍</button>
-          <button id="statsToggle" class="btn-icon" title="Statistiques">📊</button>
-          <button id="themeToggle" class="btn-icon" title="Thème sombre">🌙</button>
-          <button id="settingsToggle" class="btn-icon" title="Paramètres">⚙️</button>
-        </div>
-      </div>
-      <p class="subtitle">Emploi du temps avec enregistrements</p>
+        <h1>Mon Emploi du Temps</h1>
+        <p class="subtitle">Enregistrements audio et transcriptions</p>
     </header>
 
-    <!-- Search bar -->
-    <div id="searchBar" class="search-bar hidden">
-      <input type="text" id="searchInput" placeholder="Rechercher un cours, prof, enregistrement..." />
-      <button id="searchClear" class="btn-clear">✕</button>
-    </div>
-
-    <!-- Stats panel -->
-    <div id="statsPanel" class="stats-panel hidden">
-      <div class="stat-card">
-        <span class="stat-value" id="statCourses">0</span>
-        <span class="stat-label">Cours cette semaine</span>
-      </div>
-      <div class="stat-card">
-        <span class="stat-value" id="statRecordings">0</span>
-        <span class="stat-label">Enregistrements</span>
-      </div>
-      <div class="stat-card">
-        <span class="stat-value" id="statHours">0h</span>
-        <span class="stat-label">Heures de cours</span>
-      </div>
-    </div>
-    
-    <section id="controls" class="controls">
-      <div class="week-nav">
-        <button id="prevWeek" class="btn btn-nav">◀</button>
-        <div class="week-info">
-          <div id="weekLabel" class="week-label">Semaine</div>
-          <div id="weekDates" class="week-dates"></div>
+    <!-- Controls -->
+    <div class="controls">
+        <div class="week-toggle">
+            <button id="btn-semaine-a" class="week-btn active">Semaine A</button>
+            <button id="btn-semaine-b" class="week-btn">Semaine B</button>
         </div>
-        <button id="nextWeek" class="btn btn-nav">▶</button>
-        <button id="todayBtn" class="btn btn-today">Aujourd'hui</button>
-      </div>
-      <div id="loading" class="loading hidden">Chargement...</div>
-    </section>
-
-    <!-- Mobile day selector for navigation -->
-    <div id="daySelector" class="day-selector hidden"></div>
-
-    <section id="timetable" class="timetable">
-      <div id="gridWrap" class="grid-wrapper">
-        <div id="timesColumn" class="times-column"></div>
-        <div id="grid" class="grid"></div>
-      </div>
-    </section>
-
-    <!-- Modal for recording details -->
-    <div id="modal" class="modal hidden">
-      <div class="modal-backdrop"></div>
-      <div class="modal-content">
-        <button id="closeModal" class="btn-close">✕</button>
-        <div id="modalBody"></div>
-      </div>
-    </div>
-
-    <!-- Settings panel -->
-    <div id="settingsModal" class="modal hidden">
-      <div class="modal-backdrop"></div>
-      <div class="modal-content settings-content">
-        <button id="closeSettings" class="btn-close">✕</button>
-        <h3>⚙️ Paramètres</h3>
-        <div class="settings-group">
-          <label class="setting-item">
-            <span>Thème sombre</span>
-            <input type="checkbox" id="darkModeCheck" />
-          </label>
-          <label class="setting-item">
-            <span>Notifications</span>
-            <input type="checkbox" id="notifCheck" />
-          </label>
-          <label class="setting-item">
-            <span>Compacter l'affichage</span>
-            <input type="checkbox" id="compactCheck" />
-          </label>
-          <label class="setting-item">
-            <span>Vitesse de lecture</span>
-            <select id="speechRate">
-              <option value="0.75">0.75x</option>
-              <option value="1" selected>1x</option>
-              <option value="1.25">1.25x</option>
-              <option value="1.5">1.5x</option>
-              <option value="2">2x</option>
+        <div class="filters">
+            <select id="filter-matiere">
+                <option value="">Toutes les matières</option>
             </select>
-          </label>
+            <select id="filter-status">
+                <option value="">Tous les statuts</option>
+                <option value="detected">Détecté</option>
+                <option value="transcribing">Transcription...</option>
+                <option value="summarizing">Résumé...</option>
+                <option value="done">Terminé</option>
+                <option value="error">Erreur</option>
+            </select>
         </div>
-        <div class="settings-actions">
-          <button id="exportAll" class="btn">📥 Exporter tout</button>
-          <button id="clearCache" class="btn btn-danger">🗑️ Vider le cache</button>
-        </div>
-      </div>
     </div>
 
-    <!-- Toast notifications -->
-    <div id="toastContainer" class="toast-container"></div>
-  </main>
+    <!-- Timetable Grid -->
+    <div class="timetable-container">
+        <div class="timetable" id="timetable">
+            <!-- Generated by JavaScript -->
+        </div>
+    </div>
 
-  <script src="app.js"></script>
+    <!-- Modal for course details -->
+    <div id="modal" class="modal">
+        <div class="modal-content">
+            <button class="modal-close" id="modal-close">&times;</button>
+            <div class="modal-header">
+                <h2 id="modal-title">Détails du cours</h2>
+                <div class="modal-info">
+                    <span id="modal-prof"></span>
+                    <span id="modal-salle"></span>
+                    <span id="modal-time"></span>
+                </div>
+            </div>
+            
+            <!-- Audio Player -->
+            <div class="audio-section" id="audio-section">
+                <h3>Enregistrement audio</h3>
+                <div class="audio-player">
+                    <audio id="audio-player" controls></audio>
+                    <div class="audio-status" id="audio-status"></div>
+                </div>
+            </div>
+
+            <!-- Tabs -->
+            <div class="tabs">
+                <button class="tab-btn active" data-tab="transcription">Transcription</button>
+                <button class="tab-btn" data-tab="resume">Résumé</button>
+            </div>
+
+            <!-- Tab Content -->
+            <div class="tab-content">
+                <div id="tab-transcription" class="tab-pane active">
+                    <div class="transcription-text" id="transcription-text">
+                        <p class="placeholder">Aucune transcription disponible</p>
+                    </div>
+                </div>
+                <div id="tab-resume" class="tab-pane">
+                    <div class="resume-text" id="resume-text">
+                        <p class="placeholder">Aucun résumé disponible</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recordings list -->
+            <div class="recordings-list" id="recordings-list">
+                <h3>Enregistrements associés</h3>
+                <div id="recordings-container"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Section pour les enregistrements sans cours associé -->
+    <section class="orphan-recordings-section" id="orphan-section">
+        <div class="orphan-header">
+            <h2>Enregistrements sans cours</h2>
+            <p class="orphan-subtitle">Enregistrements non associés à un créneau de l'emploi du temps</p>
+            <div class="orphan-filters">
+                <select id="orphan-filter-status">
+                    <option value="">Tous les statuts</option>
+                    <option value="detected">Détecté</option>
+                    <option value="transcribing">Transcription...</option>
+                    <option value="summarizing">Résumé...</option>
+                    <option value="done">Terminé</option>
+                    <option value="error">Erreur</option>
+                </select>
+            </div>
+        </div>
+        <div class="orphan-recordings-grid" id="orphan-recordings-grid">
+            <!-- Généré par JavaScript -->
+            <p class="placeholder">Aucun enregistrement orphelin</p>
+        </div>
+    </section>
+
+    <!-- Modal pour enregistrement orphelin -->
+    <div id="orphan-modal" class="modal">
+        <div class="modal-content">
+            <button class="modal-close" id="orphan-modal-close">&times;</button>
+            <div class="modal-header">
+                <h2 id="orphan-modal-title">Enregistrement</h2>
+                <div class="modal-info">
+                    <span id="orphan-modal-date"></span>
+                    <span id="orphan-modal-status"></span>
+                </div>
+            </div>
+            
+            <!-- Audio Player -->
+            <div class="audio-section">
+                <h3>Enregistrement audio</h3>
+                <div class="audio-player">
+                    <audio id="orphan-audio-player" controls></audio>
+                    <div class="audio-status" id="orphan-audio-status"></div>
+                </div>
+            </div>
+
+            <!-- Tabs -->
+            <div class="tabs">
+                <button class="tab-btn active" data-tab="orphan-transcription">Transcription</button>
+                <button class="tab-btn" data-tab="orphan-resume">Résumé</button>
+            </div>
+
+            <!-- Tab Content -->
+            <div class="tab-content">
+                <div id="tab-orphan-transcription" class="tab-pane active">
+                    <div class="transcription-text" id="orphan-transcription-text">
+                        <p class="placeholder">Aucune transcription disponible</p>
+                    </div>
+                </div>
+                <div id="tab-orphan-resume" class="tab-pane">
+                    <div class="resume-text" id="orphan-resume-text">
+                        <p class="placeholder">Aucun résumé disponible</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Status Legend -->
+    <div class="legend">
+        <h4>Légende des statuts</h4>
+        <div class="legend-items">
+            <div class="legend-item">
+                <span class="legend-color status-detected"></span>
+                <span>Détecté</span>
+            </div>
+            <div class="legend-item">
+                <span class="legend-color status-transcribing"></span>
+                <span>Transcription</span>
+            </div>
+            <div class="legend-item">
+                <span class="legend-color status-summarizing"></span>
+                <span>Résumé</span>
+            </div>
+            <div class="legend-item">
+                <span class="legend-color status-done"></span>
+                <span>Terminé</span>
+            </div>
+            <div class="legend-item">
+                <span class="legend-color status-error"></span>
+                <span>Erreur</span>
+            </div>
+        </div>
+    </div>
+
+    <script src="config.js"></script>
+    <script src="timetable-data.js"></script>
+    <script src="app.js"></script>
 </body>
 </html>
