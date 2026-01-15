@@ -3,62 +3,77 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pro-Audio Transcribe Manager</title>
+    <title>AudioMind Pro | Dashboard</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
     <script type="module">
         import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';
 
         const SUPABASE_CONFIG = {
             url: "https://wihlcbsfgpchlvgguibx.supabase.co",
-            apiKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndpaGxjYnNmZ3BjaGx2Z2d1aWJ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg0MDAwMDUsImV4cCI6MjA4Mzk3NjAwNX0.nJCzIcczjA9Rs5craSnHkNCbuTxZI_WFm5dCnsmfcnI", // Remplacez par votre clé publique 'anon'
+            apiKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndpaGxjYnNmZ3BjaGx2Z2d1aWJ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg0MDAwMDUsImV4cCI6MjA4Mzk3NjAwNX0.nJCzIcczjA9Rs5craSnHkNCbuTxZI_WFm5dCnsmfcnI",
             tableName: "audiocours"
         };
 
         const supabaseClient = createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.apiKey);
         
         let previousData = new Map();
-        let initialized = false;
-        let currentSegments = []; // Pour le suivi audio
+        let currentSegments = [];
 
         const STATUS_MAP = {
-            'detected': { pct: 10, label: 'Détecté', color: 'bg-gray-500' },
-            'transcribing': { pct: 40, label: 'Transcription...', color: 'bg-blue-500' },
-            'summarizing': { pct: 70, label: 'Résumé...', color: 'bg-purple-500' },
-            'uploading': { pct: 90, label: 'Upload...', color: 'bg-orange-500' },
-            'done': { pct: 100, label: 'Terminé', color: 'bg-emerald-500' },
-            'error': { pct: 100, label: 'Erreur', color: 'bg-red-500' }
+            'detected': { pct: 15, label: 'Initialisation', color: 'bg-zinc-500', icon: 'fa-fingerprint' },
+            'transcribing': { pct: 45, label: 'Transcription', color: 'bg-indigo-500', icon: 'fa-waveform-lines' },
+            'summarizing': { pct: 75, label: 'Analyse IA', color: 'bg-fuchsia-500', icon: 'fa-brain' },
+            'uploading': { pct: 90, label: 'Finalisation', color: 'bg-orange-500', icon: 'fa-cloud-arrow-up' },
+            'done': { pct: 100, label: 'Terminé', color: 'bg-emerald-500', icon: 'fa-check-circle' },
+            'error': { pct: 100, label: 'Erreur', color: 'bg-red-500', icon: 'fa-exclamation-triangle' }
         };
 
-        // --- Fonctions UI ---
+        // --- UI RENDERERS ---
 
         function createCard(item) {
             const statusInfo = STATUS_MAP[item.status] || STATUS_MAP['detected'];
+            const isDone = item.status === 'done';
+            const dateStr = item.created_at ? new Date(item.created_at).toLocaleDateString('fr-FR', {day:'2-digit', month:'short'}) : 'Récent';
+
             const card = document.createElement('div');
-            card.className = 'bg-zinc-800 border border-zinc-700 rounded-xl p-5 hover:border-zinc-500 transition-all group';
+            card.className = 'group bg-zinc-900 border border-zinc-800 rounded-2xl p-5 hover:border-indigo-500/50 transition-all duration-300 shadow-sm hover:shadow-indigo-500/10';
             card.id = 'card-' + item.id;
             
             card.innerHTML = `
                 <div class="flex justify-between items-start mb-4">
-                    <h3 class="font-bold text-zinc-100 truncate w-40">ID: ${item.id}</h3>
-                    <span class="text-[10px] uppercase tracking-widest px-2 py-1 rounded ${statusInfo.color} text-white font-bold">
-                        ${statusInfo.label}
-                    </span>
-                </div>
-                
-                <div class="w-full bg-zinc-700 h-1.5 rounded-full mb-4 overflow-hidden">
-                    <div class="progress-bar h-full ${statusInfo.color} transition-all duration-500" style="width: ${statusInfo.pct}%"></div>
+                    <div class="flex flex-col">
+                        <span class="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">${dateStr}</span>
+                        <h3 class="font-bold text-white truncate w-36 text-sm">${item.audio_source || 'Audio sans titre'}</h3>
+                    </div>
+                    <div class="status-badge flex items-center gap-1.5 px-2.5 py-1 rounded-full ${statusInfo.color.replace('bg-', 'text-')} bg-white/5 border border-current/20">
+                        <i class="fas ${statusInfo.icon} text-[10px]"></i>
+                        <span class="text-[10px] font-black uppercase tracking-tighter">${statusInfo.label}</span>
+                    </div>
                 </div>
 
-                <div class="space-y-2 mb-6">
-                    <p class="text-xs text-zinc-400 truncate"><i class="fas fa-file-audio mr-2"></i>${item.audio_source || 'Source inconnue'}</p>
+                <div class="progress-container mb-6 ${isDone ? 'hidden' : ''}">
+                    <div class="flex justify-between text-[10px] mb-1.5 font-medium text-zinc-400">
+                        <span>Progression</span>
+                        <span class="pct-text">${statusInfo.pct}%</span>
+                    </div>
+                    <div class="w-full bg-zinc-800 h-1.5 rounded-full overflow-hidden">
+                        <div class="progress-bar h-full ${statusInfo.color} transition-all duration-700 ease-out" style="width: ${statusInfo.pct}%"></div>
+                    </div>
                 </div>
+
+                ${isDone ? `
+                <div class="flex items-center gap-4 mb-6 text-zinc-400 text-xs italic">
+                    <div class="flex items-center gap-1.5"><i class="fa-regular fa-clock"></i> <span>Prêt</span></div>
+                    <div class="flex items-center gap-1.5"><i class="fa-regular fa-file-lines"></i> <span>IA OK</span></div>
+                </div>
+                ` : ''}
 
                 <button onclick="window.openDetails('${item.id}')" 
-                        class="w-full py-2 bg-zinc-700 hover:bg-indigo-600 text-white text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                    </svg>
-                    Ouvrir les détails
+                        class="w-full py-2.5 bg-zinc-800 group-hover:bg-indigo-600 text-white text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-2 border border-zinc-700 group-hover:border-indigo-400">
+                    OUVRIR LE RAPPORT
+                    <i class="fa-solid fa-arrow-right text-[10px]"></i>
                 </button>
             `;
             document.getElementById('cardsContainer').appendChild(card);
@@ -68,55 +83,140 @@
             const { data: item, error } = await supabaseClient.from(SUPABASE_CONFIG.tableName).select('*').eq('id', id).single();
             if(error) return;
 
-            const modal = document.getElementById('modal');
-            const modalContent = document.getElementById('modalContent');
+            const drawer = document.getElementById('drawer');
+            const drawerContent = document.getElementById('drawerContent');
             currentSegments = item.transcription_segments || [];
 
-            modalContent.innerHTML = `
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div>
-                        <h2 class="text-xl font-bold mb-4 text-indigo-400">Audio & Transcription</h2>
-                        <audio id="mainAudio" controls class="w-full mb-4 bg-zinc-900 rounded-lg">
+            let html = `
+                <div class="space-y-8">
+                    <header>
+                        <h2 class="text-2xl font-black text-white leading-tight">${item.audio_source || 'Analyse Audio'}</h2>
+                        <p class="text-zinc-500 text-sm mt-1">Généré le ${new Date(item.created_at).toLocaleString('fr-FR')}</p>
+                    </header>
+
+                    <section class="bg-zinc-900/50 rounded-2xl border border-zinc-800 p-4">
+                         <audio id="mainAudio" controls class="w-full">
                             <source src="${item.audio_url}" type="audio/mpeg">
                         </audio>
-                        
-                        <div class="bg-zinc-900 p-4 rounded-xl h-[400px] overflow-y-auto border border-zinc-700 custom-scrollbar" id="transcriptBox">
+                    </section>
+            `;
+
+            // Section Résumé avec Parsing Markdown
+            if (item.resume_text) {
+                // Utilisation de Marked pour transformer le texte IA en HTML propre
+                const formattedResume = marked.parse(item.resume_text);
+                html += `
+                    <section class="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                        <div class="flex items-center gap-2 mb-4">
+                            <div class="p-1.5 bg-fuchsia-500/10 rounded-lg"><i class="fa-solid fa-sparkles text-fuchsia-500 text-xs"></i></div>
+                            <h3 class="font-bold text-zinc-200 uppercase tracking-widest text-[10px]">Synthèse Executive</h3>
+                        </div>
+                        <div class="markdown-content bg-zinc-900/30 border border-zinc-800/50 p-6 rounded-2xl text-zinc-300">
+                            ${formattedResume}
+                        </div>
+                    </section>
+                `;
+            } else if (item.status !== 'done' && item.status !== 'error') {
+                html += renderPlaceholder("L'IA rédige le résumé...", "Analyse des points clés en cours.");
+            }
+
+            // Section Transcription
+            if (currentSegments.length > 0) {
+                html += `
+                    <section>
+                        <div class="flex items-center gap-2 mb-4">
+                            <div class="p-1.5 bg-indigo-500/10 rounded-lg"><i class="fa-solid fa-terminal text-indigo-500 text-xs"></i></div>
+                            <h3 class="font-bold text-zinc-200 uppercase tracking-widest text-[10px]">Transcription Intégrale</h3>
+                        </div>
+                        <div class="bg-zinc-900/80 p-5 rounded-2xl border border-zinc-800 max-h-[350px] overflow-y-auto custom-scrollbar leading-relaxed" id="transcriptBox">
                             ${renderSegments(currentSegments)}
                         </div>
-                    </div>
-                    
-                    <div class="space-y-6">
-                        <div>
-                            <h2 class="text-xl font-bold mb-2 text-indigo-400">Résumé IA</h2>
-                            <div class="bg-zinc-900 p-4 rounded-xl border border-zinc-700 text-zinc-300 leading-relaxed">
-                                ${item.resume_text || 'Résumé en cours de génération...'}
-                            </div>
-                        </div>
-                        <div class="flex gap-2">
-                            <button onclick="copyText(\`${item.transcription_text}\`)" class="flex-1 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-xs transition-all">Copier Transcription</button>
-                            <button onclick="downloadTxt('${item.id}', \`${item.transcription_text}\`)" class="flex-1 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-xs transition-all">Télécharger .txt</button>
-                        </div>
+                    </section>
+                `;
+            }
+
+            html += `
+                    <div class="grid grid-cols-2 gap-3 pt-6">
+                        <button onclick="window.copyText(\`${item.transcription_text?.replace(/`/g, '\\`').replace(/\$/g, '\\$') || ''}\`)" 
+                                class="py-3 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all border border-zinc-700">
+                            Copier Texte Brut
+                        </button>
+                        <button onclick="window.closeDrawer()" 
+                                class="py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all shadow-lg shadow-indigo-600/20">
+                            Fermer
+                        </button>
                     </div>
                 </div>
             `;
 
-            modal.classList.remove('hidden');
-            modal.classList.add('flex');
-            
-            // Setup Audio Sync
+            drawerContent.innerHTML = html;
+            drawer.classList.remove('translate-x-full');
+            document.body.style.overflow = 'hidden';
+
             const audio = document.getElementById('mainAudio');
-            audio.ontimeupdate = () => syncTranscription(audio.currentTime);
+            if(audio) audio.ontimeupdate = () => syncTranscription(audio.currentTime);
+        }
+
+        function renderPlaceholder(title, sub) {
+            return `
+                <div class="flex flex-col items-center justify-center p-12 border-2 border-dashed border-zinc-800 rounded-3xl text-center">
+                    <div class="w-10 h-10 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+                    <h4 class="text-zinc-200 font-bold text-sm">${title}</h4>
+                    <p class="text-zinc-500 text-xs mt-1.5">${sub}</p>
+                </div>
+            `;
         }
 
         function renderSegments(segments) {
-            if(!segments || segments.length === 0) return `<p class="text-zinc-500 italic">Aucun segment temporel disponible.</p>`;
             return segments.map((s, i) => `
                 <span id="seg-${i}" 
                       onclick="seekAudio(${s.start})"
-                      class="segment cursor-pointer p-1 rounded hover:bg-zinc-700 transition-colors text-zinc-400">
+                      class="segment cursor-pointer px-1 rounded transition-all text-zinc-500 hover:text-white">
                     ${s.text}
                 </span>
             `).join(' ');
+        }
+
+        // --- CORE LOGIC (Preserved) ---
+
+        async function fetchAndCompare() {
+            const { data, error } = await supabaseClient.from(SUPABASE_CONFIG.tableName).select('*');
+            if(error) return;
+            const currentData = new Map();
+            data.forEach(item => currentData.set(item.id, item));
+            data.forEach(item => {
+                if(!previousData.has(item.id)) {
+                    if(item.status !== 'silent') createCard(item);
+                } else {
+                    const old = previousData.get(item.id);
+                    if(old.status !== item.status) updateCardUI(item);
+                }
+            });
+            previousData.forEach((_, id) => {
+                if(!currentData.has(id)) document.getElementById('card-'+id)?.remove();
+            });
+            previousData = currentData;
+        }
+
+        function updateCardUI(item) {
+            const card = document.getElementById('card-' + item.id);
+            if(!card) return;
+            const statusInfo = STATUS_MAP[item.status] || STATUS_MAP['detected'];
+            
+            const badge = card.querySelector('.status-badge');
+            badge.className = `status-badge flex items-center gap-1.5 px-2.5 py-1 rounded-full ${statusInfo.color.replace('bg-', 'text-')} bg-white/5 border border-current/20`;
+            badge.innerHTML = `<i class="fas ${statusInfo.icon} text-[10px]"></i><span class="text-[10px] font-black uppercase tracking-tighter">${statusInfo.label}</span>`;
+            
+            const bar = card.querySelector('.progress-bar');
+            const pctText = card.querySelector('.pct-text');
+            if(bar) {
+                bar.className = `progress-bar h-full ${statusInfo.color} transition-all duration-700`;
+                bar.style.width = statusInfo.pct + '%';
+                pctText.textContent = statusInfo.pct + '%';
+            }
+            if(item.status === 'done') {
+                card.querySelector('.progress-container')?.classList.add('hidden');
+            }
         }
 
         window.seekAudio = (time) => {
@@ -130,104 +230,89 @@
                 const el = document.getElementById(`seg-${i}`);
                 if (el) {
                     if (time >= seg.start && time <= seg.end) {
-                        el.classList.add('bg-indigo-900/50', 'text-white', 'font-medium');
+                        el.classList.add('text-indigo-400', 'bg-indigo-500/10', 'font-medium');
                         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
                     } else {
-                        el.classList.remove('bg-indigo-900/50', 'text-white', 'font-medium');
+                        el.classList.remove('text-indigo-400', 'bg-indigo-500/10', 'font-medium');
                     }
                 }
             });
         }
 
-        // --- Logique Supabase Sync (Améliorée) ---
-
-        async function fetchAndCompare() {
-            const { data, error } = await supabaseClient.from(SUPABASE_CONFIG.tableName).select('*');
-            if(error) return;
-
-            const currentData = new Map();
-            data.forEach(item => currentData.set(item.id, item));
-
-            // Nouveau vs Suppression
-            data.forEach(item => {
-                if(!previousData.has(item.id)) {
-                    if(item.status !== 'silent') createCard(item);
-                } else {
-                    const old = previousData.get(item.id);
-                    if(old.status !== item.status) updateCardUI(item);
-                }
-            });
-
-            previousData.forEach((_, id) => {
-                if(!currentData.has(id)) document.getElementById('card-'+id)?.remove();
-            });
-
-            previousData = currentData;
-        }
-
-        function updateCardUI(item) {
-            const card = document.getElementById('card-' + item.id);
-            if(!card) return;
-            const statusInfo = STATUS_MAP[item.status] || STATUS_MAP['detected'];
-            const bar = card.querySelector('.progress-bar');
-            const label = card.querySelector('.text-\\[10px\\]');
-            
-            if(bar) { 
-                bar.className = `progress-bar h-full ${statusInfo.color} transition-all duration-500`;
-                bar.style.width = statusInfo.pct + '%'; 
-            }
-            if(label) {
-                label.className = `text-[10px] uppercase tracking-widest px-2 py-1 rounded ${statusInfo.color} text-white font-bold`;
-                label.textContent = statusInfo.label;
-            }
-        }
-
-        // Global functions for buttons
         window.openDetails = openDetails;
-        window.closeModal = () => document.getElementById('modal').classList.replace('flex', 'hidden');
-        window.copyText = (text) => { navigator.clipboard.writeText(text); alert('Copié !'); };
+        window.closeDrawer = () => {
+            document.getElementById('drawer').classList.add('translate-x-full');
+            document.body.style.overflow = 'auto';
+        };
+        window.copyText = (text) => { navigator.clipboard.writeText(text); alert('Texte copié !'); };
         
         fetchAndCompare();
         setInterval(fetchAndCompare, 5000);
     </script>
 
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: #18181b; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 10px; }
-        .segment { display: inline; line-height: 1.8; }
-        body { background-color: #09090b; }
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap');
+        
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #050505; color: #a1a1aa; }
+
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #27272a; border-radius: 10px; }
+        
+        /* Styles pour le contenu Markdown généré par l'IA */
+        .markdown-content strong { color: #fff; font-weight: 700; }
+        .markdown-content p { margin-bottom: 1.25rem; line-height: 1.7; }
+        .markdown-content ul { list-style-type: disc; padding-left: 1.5rem; margin-bottom: 1.25rem; }
+        .markdown-content ol { list-style-type: decimal; padding-left: 1.5rem; margin-bottom: 1.25rem; }
+        .markdown-content li { margin-bottom: 0.5rem; }
+        
+        .segment { display: inline; line-height: 2.2; transition: all 0.2s; font-size: 0.95rem; }
+        
+        .glass-panel {
+            background: rgba(9, 9, 11, 0.95);
+            backdrop-filter: blur(20px);
+            border-left: 1px solid rgba(255,255,255,0.05);
+        }
+
+        audio::-webkit-media-controls-panel { background-color: #18181b; }
+        audio::-webkit-media-controls-current-time-display, 
+        audio::-webkit-media-controls-time-remaining-display { color: #ffffff; }
     </style>
 </head>
-<body class="text-zinc-200 min-h-screen p-4 md:p-10">
+<body class="min-h-screen">
 
-    <header class="max-w-7xl mx-auto mb-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <header class="max-w-7xl mx-auto px-6 py-10 flex flex-col md:flex-row md:items-center justify-between gap-8">
         <div>
-            <h1 class="text-3xl font-black text-white tracking-tight">Audio<span class="text-indigo-500">Mind</span></h1>
-            <p class="text-zinc-400 text-sm">Monitoring de transcription en temps réel</p>
-        </div>
-        <div class="flex items-center gap-3 bg-zinc-800/50 p-2 rounded-lg border border-zinc-700">
-            <div class="h-2 w-2 bg-emerald-500 rounded-full animate-pulse"></div>
-            <span class="text-xs font-mono uppercase tracking-wider text-zinc-300">Live Sync Active</span>
+            <div class="flex items-center gap-3 mb-3">
+                <div class="px-2 py-1 bg-indigo-500 text-white text-[10px] font-black rounded uppercase tracking-tighter">AI Engine v2</div>
+                <div class="flex items-center gap-2 text-zinc-500 text-[10px] font-bold uppercase tracking-widest">
+                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    Systems Nominal
+                </div>
+            </div>
+            <h1 class="text-4xl font-extrabold text-white tracking-tight">Audio<span class="text-indigo-500">Mind</span> <span class="text-zinc-800">/</span> Dashboard</h1>
         </div>
     </header>
 
-    <main id="cardsContainer" class="max-w-7xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-        </main>
+    <main class="max-w-7xl mx-auto px-6 pb-24">
+        <div id="cardsContainer" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+            </div>
+    </main>
 
-    <div id="modal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-50 items-center justify-center p-4">
-        <div class="bg-zinc-800 border border-zinc-700 w-full max-w-5xl max-h-[90vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col">
-            <div class="p-4 border-b border-zinc-700 flex justify-between items-center bg-zinc-800/50">
-                <span class="text-sm font-bold text-zinc-400">DÉTAILS DU COURS</span>
-                <button onclick="closeModal()" class="text-zinc-400 hover:text-white transition-colors">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
+    <div id="drawer" class="fixed inset-0 z-50 translate-x-full transition-transform duration-500 ease-in-out flex justify-end">
+        <div class="absolute inset-0 bg-black/80 backdrop-blur-md" onclick="closeDrawer()"></div>
+        
+        <div class="relative w-full max-w-xl glass-panel h-full shadow-2xl flex flex-col border-l border-zinc-800">
+            <div class="p-6 border-b border-zinc-800 flex justify-between items-center">
+                <span class="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em]">Rapport d'analyse détaillé</span>
+                <button onclick="closeDrawer()" class="w-8 h-8 flex items-center justify-center rounded-full bg-zinc-800 text-zinc-400 hover:text-white transition-colors">
+                    <i class="fa-solid fa-xmark"></i>
                 </button>
             </div>
-            <div id="modalContent" class="p-6 overflow-y-auto">
+            
+            <div id="drawerContent" class="flex-1 overflow-y-auto p-8 custom-scrollbar">
                 </div>
         </div>
     </div>
