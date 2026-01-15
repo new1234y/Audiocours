@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pro-Audio Transcribe Manager</title>
+    <script type="module">
+        import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';
+
+        const SUPABASE_CONFIG = {
+            url: "https://wihlcbsfgpchlvgguibx.supabase.co",
+            apiKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndpaGxjYnNmZ3BjaGx2Z2d1aWJ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg0MDAwMDUsImV4cCI6MjA4Mzk3NjAwNX0.nJCzIcczjA9Rs5craSnHkNCbuTxZI_WFm5dCnsmfcnI", // Remplacez par votre clé publique 'anon'
+            tableName: "audiocours"
+        };
+
+        const supabaseClient = createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.apiKey);
+        
+        let previousData = new Map();
+        let initialized = false;
+        let currentSegments = []; // Pour le suivi audio
+
+        const STATUS_MAP = {
+            'detected': { pct: 10, label: 'Détecté', color: 'bg-gray-500' },
+            'transcribing': { pct: 40, label: 'Transcription...', color: 'bg-blue-500' },
+            'summarizing': { pct: 70, label: 'Résumé...', color: 'bg-purple-500' },
+            'uploading': { pct: 90, label: 'Upload...', color: 'bg-orange-500' },
+            'done': { pct: 100, label: 'Terminé', color: 'bg-emerald-500' },
+            'error': { pct: 100, label: 'Erreur', color: 'bg-red-500' }
+        };
+
+        // --- Fonctions UI ---
+
+        function createCard(item) {
+            const statusInfo = STATUS_MAP[item.status] || STATUS_MAP['detected'];
+            const card = document.createElement('div');
+            card.className = 'bg-zinc-800 border border-zinc-700 rounded-xl p-5 hover:border-zinc-500 transition-all group';
+            card.id = 'card-' + item.id;
+            
+            card.innerHTML = `
+                <div class="flex justify-between items-start mb-4">
+                    <h3 class="font-bold text-zinc-100 truncate w-40">ID: ${item.id}</h3>
+                    <span class="text-[10px] uppercase tracking-widest px-2 py-1 rounded ${statusInfo.color} text-white font-bold">
+                        ${statusInfo.label}
+                    </span>
+                </div>
+                
+                <div class="w-full bg-zinc-700 h-1.5 rounded-full mb-4 overflow-hidden">
+                    <div class="progress-bar h-full ${statusInfo.color} transition-all duration-500" style="width: ${statusInfo.pct}%"></div>
+                </div>
+
+                <div class="space-y-2 mb-6">
+                    <p class="text-xs text-zinc-400 truncate"><i class="fas fa-file-audio mr-2"></i>${item.audio_source || 'Source inconnue'}</p>
+                </div>
+
+                <button onclick="window.openDetails('${item.id}')" 
+                        class="w-full py-2 bg-zinc-700 hover:bg-indigo-600 text-white text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                    Ouvrir les détails
+                </button>
+            `;
+            document.getElementById('cardsContainer').appendChild(card);
+        }
+
+        async function openDetails(id) {
+            const { data: item, error } = await supabaseClient.from(SUPABASE_CONFIG.tableName).select('*').eq('id', id).single();
+            if(error) return;
+
+            const modal = document.getElementById('modal');
+            const modalContent = document.getElementById('modalContent');
+            currentSegments = item.transcription_segments || [];
+
+            modalContent.innerHTML = `
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div>
+                        <h2 class="text-xl font-bold mb-4 text-indigo-400">Audio & Transcription</h2>
+                        <audio id="mainAudio" controls class="w-full mb-4 bg-zinc-900 rounded-lg">
+                            <source src="${item.audio_url}" type="audio/mpeg">
+                        </audio>
+                        
+                        <div class="bg-zinc-900 p-4 rounded-xl h-[400px] overflow-y-auto border border-zinc-700 custom-scrollbar" id="transcriptBox">
+                            ${renderSegments(currentSegments)}
+                        </div>
+                    </div>
+                    
+                    <div class="space-y-6">
+                        <div>
+                            <h2 class="text-xl font-bold mb-2 text-indigo-400">Résumé IA</h2>
+                            <div class="bg-zinc-900 p-4 rounded-xl border border-zinc-700 text-zinc-300 leading-relaxed">
+                                ${item.resume_text || 'Résumé en cours de génération...'}
+                            </div>
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="copyText(\`${item.transcription_text}\`)" class="flex-1 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-xs transition-all">Copier Transcription</button>
+                            <button onclick="downloadTxt('${item.id}', \`${item.transcription_text}\`)" class="flex-1 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-xs transition-all">Télécharger .txt</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            
+            // Setup Audio Sync
+            const audio = document.getElementById('mainAudio');
+            audio.ontimeupdate = () => syncTranscription(audio.currentTime);
+        }
+
+        function renderSegments(segments) {
+            if(!segments || segments.length === 0) return `<p class="text-zinc-500 italic">Aucun segment temporel disponible.</p>`;
+            return segments.map((s, i) => `
+                <span id="seg-${i}" 
+                      onclick="seekAudio(${s.start})"
+                      class="segment cursor-pointer p-1 rounded hover:bg-zinc-700 transition-colors text-zinc-400">
+                    ${s.text}
+                </span>
+            `).join(' ');
+        }
+
+        window.seekAudio = (time) => {
+            const audio = document.getElementById('mainAudio');
+            audio.currentTime = time;
+            audio.play();
+        }
+
+        function syncTranscription(time) {
+            currentSegments.forEach((seg, i) => {
+                const el = document.getElementById(`seg-${i}`);
+                if (el) {
+                    if (time >= seg.start && time <= seg.end) {
+                        el.classList.add('bg-indigo-900/50', 'text-white', 'font-medium');
+                        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    } else {
+                        el.classList.remove('bg-indigo-900/50', 'text-white', 'font-medium');
+                    }
+                }
+            });
+        }
+
+        // --- Logique Supabase Sync (Améliorée) ---
+
+        async function fetchAndCompare() {
+            const { data, error } = await supabaseClient.from(SUPABASE_CONFIG.tableName).select('*');
+            if(error) return;
+
+            const currentData = new Map();
+            data.forEach(item => currentData.set(item.id, item));
+
+            // Nouveau vs Suppression
+            data.forEach(item => {
+                if(!previousData.has(item.id)) {
+                    if(item.status !== 'silent') createCard(item);
+                } else {
+                    const old = previousData.get(item.id);
+                    if(old.status !== item.status) updateCardUI(item);
+                }
+            });
+
+            previousData.forEach((_, id) => {
+                if(!currentData.has(id)) document.getElementById('card-'+id)?.remove();
+            });
+
+            previousData = currentData;
+        }
+
+        function updateCardUI(item) {
+            const card = document.getElementById('card-' + item.id);
+            if(!card) return;
+            const statusInfo = STATUS_MAP[item.status] || STATUS_MAP['detected'];
+            const bar = card.querySelector('.progress-bar');
+            const label = card.querySelector('.text-\\[10px\\]');
+            
+            if(bar) { 
+                bar.className = `progress-bar h-full ${statusInfo.color} transition-all duration-500`;
+                bar.style.width = statusInfo.pct + '%'; 
+            }
+            if(label) {
+                label.className = `text-[10px] uppercase tracking-widest px-2 py-1 rounded ${statusInfo.color} text-white font-bold`;
+                label.textContent = statusInfo.label;
+            }
+        }
+
+        // Global functions for buttons
+        window.openDetails = openDetails;
+        window.closeModal = () => document.getElementById('modal').classList.replace('flex', 'hidden');
+        window.copyText = (text) => { navigator.clipboard.writeText(text); alert('Copié !'); };
+        
+        fetchAndCompare();
+        setInterval(fetchAndCompare, 5000);
+    </script>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #18181b; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 10px; }
+        .segment { display: inline; line-height: 1.8; }
+        body { background-color: #09090b; }
+    </style>
+</head>
+<body class="text-zinc-200 min-h-screen p-4 md:p-10">
+
+    <header class="max-w-7xl mx-auto mb-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+            <h1 class="text-3xl font-black text-white tracking-tight">Audio<span class="text-indigo-500">Mind</span></h1>
+            <p class="text-zinc-400 text-sm">Monitoring de transcription en temps réel</p>
+        </div>
+        <div class="flex items-center gap-3 bg-zinc-800/50 p-2 rounded-lg border border-zinc-700">
+            <div class="h-2 w-2 bg-emerald-500 rounded-full animate-pulse"></div>
+            <span class="text-xs font-mono uppercase tracking-wider text-zinc-300">Live Sync Active</span>
+        </div>
+    </header>
+
+    <main id="cardsContainer" class="max-w-7xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+        </main>
+
+    <div id="modal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-50 items-center justify-center p-4">
+        <div class="bg-zinc-800 border border-zinc-700 w-full max-w-5xl max-h-[90vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+            <div class="p-4 border-b border-zinc-700 flex justify-between items-center bg-zinc-800/50">
+                <span class="text-sm font-bold text-zinc-400">DÉTAILS DU COURS</span>
+                <button onclick="closeModal()" class="text-zinc-400 hover:text-white transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+            <div id="modalContent" class="p-6 overflow-y-auto">
+                </div>
+        </div>
+    </div>
+
+</body>
+</html>
